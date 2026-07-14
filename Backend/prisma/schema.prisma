@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PERSONEL
+  TEKNIK_PERSONEL
+  ADMIN
+}
+
+enum TicketPriority {
+  DUSUK
+  NORMAL
+  YUKSEK
+  ACIL
+}
+
+enum TicketStatus {
+  YENI
+  ATANDI
+  ISLEMDE
+  BEKLEMEDE
+  COZULDU
+  IPTAL_EDILDI
+}
+
+enum TicketLogType {
+  TALEP_OLUSTURULDU
+  PERSONEL_ATANDI
+  DURUM_DEGISTIRILDI
+  ONCELIK_DEGISTIRILDI
+  ACIKLAMA_EKLENDI
+  COZUM_EKLENDI
+  TALEP_KAPATILDI
+  TALEP_YENIDEN_ACILDI
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  users     User[]
+  tickets   Ticket[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("departments")
+}
+
+model User {
+  id       Int      @id @default(autoincrement())
+  name     String
+  email    String   @unique
+  password String
+  phone    String?
+  role     UserRole @default(PERSONEL)
+  isActive Boolean  @default(true)
+
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  specializations Specialization[]
+
+  createdTickets  Ticket[]    @relation("CreatedTickets")
+  assignedTickets Ticket[]    @relation("AssignedTickets")
+  ticketLogs      TicketLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([role])
+  @@map("users")
+}
+
+model Specialization {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  categories Category[]
+  users      User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("specializations")
+}
+
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  specializationId Int
+  specialization   Specialization @relation(fields: [specializationId], references: [id])
+
+  tickets Ticket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([specializationId])
+  @@map("categories")
+}
+
+model Ticket {
+  id                    Int            @id @default(autoincrement())
+  ticketNumber          String         @unique
+  title                 String
+  description           String
+  location              String?
+  priority              TicketPriority @default(NORMAL)
+  status                TicketStatus   @default(YENI)
+  resolutionDescription String?
+  attachmentUrl         String?
+
+  createdById Int
+  createdBy   User @relation("CreatedTickets", fields: [createdById], references: [id], onDelete: Restrict)
+
+  assignedToId Int?
+  assignedTo   User? @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  attachments TicketAttachment[]
+  logs        TicketLog[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+  closedAt   DateTime?
+
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("tickets")
+}
+
+model TicketLog {
+  id            Int           @id @default(autoincrement())
+  type          TicketLogType
+  description   String?
+  previousValue String?
+  newValue      String?
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ticket_logs")
+}
+
+model TicketAttachment {
+  id           Int     @id @default(autoincrement())
+  originalName String
+  fileName     String
+  fileUrl      String
+  mimeType     String?
+  fileSize     Int?
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("ticket_attachments")
+}
