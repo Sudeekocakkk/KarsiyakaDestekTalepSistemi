@@ -7,9 +7,11 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
 
   
+  // Not: "seed" kasıtlı olarak tanımlı değil. Bu sayede `prisma migrate dev`
+  // ve `prisma migrate reset` artık otomatik olarak prisma/seed.js çalıştırmaz.
+  // Seed verisi istenirse elle çalıştırılabilir: node prisma/seed.js
   migrations: {
     path: "prisma/migrations",
-    seed: "node prisma/seed.js",
   },
 
 

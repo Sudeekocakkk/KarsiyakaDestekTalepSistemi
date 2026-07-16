@@ -96,41 +96,40 @@ export const register = async (req, res) => {
       });
     }
 
-    let parsedDepartmentId = null;
-
     if (
-      departmentId !== undefined &&
-      departmentId !== null &&
-      departmentId !== ""
+      departmentId === undefined ||
+      departmentId === null ||
+      departmentId === ""
     ) {
-      parsedDepartmentId = Number(departmentId);
-
-      if (
-        !Number.isInteger(parsedDepartmentId) ||
-        parsedDepartmentId <= 0
-      ) {
-        return res.status(400).json({
-          message: "Geçersiz müdürlük kimliği.",
-        });
-      }
-
-      const department = await prisma.department.findUnique({
-        where: {
-          id: parsedDepartmentId,
-        },
+      return res.status(400).json({
+        message: "Müdürlük seçimi zorunludur.",
       });
+    }
 
-      if (!department) {
-        return res.status(404).json({
-          message: "Müdürlük bulunamadı.",
-        });
-      }
+    const parsedDepartmentId = Number(departmentId);
 
-      if (!department.isActive) {
-        return res.status(400).json({
-          message: "Seçilen müdürlük aktif değil.",
-        });
-      }
+    if (!Number.isInteger(parsedDepartmentId) || parsedDepartmentId <= 0) {
+      return res.status(400).json({
+        message: "Geçersiz müdürlük kimliği.",
+      });
+    }
+
+    const department = await prisma.department.findUnique({
+      where: {
+        id: parsedDepartmentId,
+      },
+    });
+
+    if (!department) {
+      return res.status(404).json({
+        message: "Müdürlük bulunamadı.",
+      });
+    }
+
+    if (!department.isActive) {
+      return res.status(400).json({
+        message: "Seçilen müdürlük aktif değil.",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

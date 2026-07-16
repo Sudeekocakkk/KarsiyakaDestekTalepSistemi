@@ -2,6 +2,7 @@ import express from "express";
 import {
   createDepartment,
   deleteDepartment,
+  getActiveDepartmentsPublic,
   getDepartmentById,
   getDepartments,
   updateDepartment,
@@ -11,6 +12,9 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
+
+// Kayıt formu oturum açmadan çağırır; bu yüzden authenticate'ten önce tanımlanır.
+router.get("/public/active", getActiveDepartmentsPublic);
 
 router.use(authenticate);
 

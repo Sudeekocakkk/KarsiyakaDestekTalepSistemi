@@ -47,6 +47,37 @@ export const createDepartment = async (req, res) => {
   }
 };
 
+// Oturum gerektirmez: kayıt formunun müdürlük seçimi için yalnızca aktif
+// müdürlüklerin id ve adını döner (kullanıcı sayısı/pasif müdürlük gibi
+// yönetim detaylarını içermez).
+export const getActiveDepartmentsPublic = async (req, res) => {
+  try {
+    const departments = await prisma.department.findMany({
+      where: {
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+    });
+
+    return res.status(200).json({
+      count: departments.length,
+      departments,
+    });
+  } catch (error) {
+    console.error("getActiveDepartmentsPublic error:", error);
+
+    return res.status(500).json({
+      message: "Müdürlükler alınırken bir hata oluştu.",
+    });
+  }
+};
+
 export const getDepartments = async (req, res) => {
   try {
     const departments = await prisma.department.findMany({
