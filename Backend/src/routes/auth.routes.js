@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  changePassword,
   getMe,
   login,
   register,
@@ -19,6 +20,10 @@ router.post("/register", validateRegister, register);
 router.post("/login", validateLogin, login);
 
 router.get("/me", authenticate, getMe);
+
+// Bilinçli olarak requirePasswordChangeCompleted kullanmaz: mustChangePassword
+// engelini kaldırmanın tek yolu budur.
+router.patch("/change-password", authenticate, changePassword);
 
 export default router;
 

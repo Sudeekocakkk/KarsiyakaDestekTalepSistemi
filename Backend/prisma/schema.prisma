@@ -60,6 +60,10 @@ model User {
   role     UserRole @default(PERSONEL)
   isActive Boolean  @default(true)
 
+  // Yönetici tarafından geçici şifreyle oluşturulan hesaplarda true olur;
+  // kullanıcı şifresini değiştirene kadar diğer sayfalara erişemez.
+  mustChangePassword Boolean @default(false)
+
   departmentId Int?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 

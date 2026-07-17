@@ -6,12 +6,16 @@ import {
   getCategoryById,
   updateCategory,
 } from "../controllers/category.controller.js";
-import { authenticate } from "../middlewares/auth.middleware.js";
+import {
+  authenticate,
+  requirePasswordChangeCompleted,
+} from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/role.middleware.js";
 
 const router = express.Router();
 
 router.use(authenticate);
+router.use(requirePasswordChangeCompleted);
 
 router.get("/", getCategories);
 router.get("/:id", getCategoryById);

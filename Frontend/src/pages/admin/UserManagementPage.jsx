@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, UserX, Search } from "lucide-react";
+import { Plus, Pencil, UserX, Search, Copy } from "lucide-react";
 import { createUser, deactivateUser, getUsers, updateUser } from "../../api/user.api";
 import { getDepartments } from "../../api/department.api";
 import { getSpecializations } from "../../api/specialization.api";
@@ -37,6 +37,9 @@ const UserManagementPage = () => {
   const [filters, setFilters] = useState({ role: "", isActive: "", search: "" });
   const [modalMode, setModalMode] = useState(null); // "create" | "edit"
   const [form, setForm] = useState(emptyForm);
+  // Yeni oluşturulan kullanıcının geçici şifresi yalnızca bu oturumda,
+  // bir kerelik gösterilir; kapatıldıktan sonra bir daha görüntülenemez.
+  const [temporaryPasswordInfo, setTemporaryPasswordInfo] = useState(null);
 
   const loadUsers = async () => {
     setIsLoading(true);
@@ -120,18 +123,20 @@ const UserManagementPage = () => {
     setIsSaving(true);
     try {
       if (modalMode === "create") {
-        if (!form.password || form.password.length < 6) {
-          setFormError("Şifre en az 6 karakter olmalıdır.");
-          setIsSaving(false);
-          return;
-        }
-        await createUser({
+        const created = await createUser({
           name: form.name.trim(),
           email: form.email.trim(),
-          password: form.password,
           role: form.role,
           departmentId: form.departmentId ? Number(form.departmentId) : undefined,
         });
+        closeModal();
+        await loadUsers();
+        setTemporaryPasswordInfo({
+          name: created.user.name,
+          email: created.user.email,
+          temporaryPassword: created.temporaryPassword,
+        });
+        return;
       } else {
         const payload = {
           name: form.name.trim(),
@@ -149,6 +154,11 @@ const UserManagementPage = () => {
           payload.password = form.password;
         }
         if (form.role === ROLES.TEKNIK_PERSONEL) {
+          if (form.specializationIds.length === 0) {
+            setFormError("Teknik personele dönüştürülürken en az bir uzmanlık alanı seçilmelidir.");
+            setIsSaving(false);
+            return;
+          }
           payload.specializationIds = form.specializationIds;
         }
         await updateUser(form.id, payload);
@@ -315,19 +325,17 @@ const UserManagementPage = () => {
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FormField
-              label={modalMode === "create" ? "Şifre" : "Yeni Şifre"}
-              required={modalMode === "create"}
-              hint={modalMode === "edit" ? "Değiştirmek istemiyorsanız boş bırakın." : "En az 6 karakter."}
-            >
-              <input
-                name="password"
-                type="password"
-                className={inputClass}
-                value={form.password}
-                onChange={handleChange}
-              />
-            </FormField>
+            {modalMode === "edit" && (
+              <FormField label="Yeni Şifre" hint="Değiştirmek istemiyorsanız boş bırakın.">
+                <input
+                  name="password"
+                  type="password"
+                  className={inputClass}
+                  value={form.password}
+                  onChange={handleChange}
+                />
+              </FormField>
+            )}
 
             <FormField label="Rol" required>
               <select name="role" className={inputClass} value={form.role} onChange={handleChange}>
@@ -339,6 +347,14 @@ const UserManagementPage = () => {
               </select>
             </FormField>
           </div>
+
+          {modalMode === "create" && (
+            <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">
+              Şifre alanı yok — sistem otomatik güvenli bir geçici şifre üretecek ve kaydettikten
+              sonra bir kerelik size gösterilecek. Kullanıcı ilk girişte şifresini değiştirmek
+              zorunda kalacak.
+            </p>
+          )}
 
           <FormField label="Müdürlük">
             <select name="departmentId" className={inputClass} value={form.departmentId} onChange={handleChange}>
@@ -388,6 +404,42 @@ const UserManagementPage = () => {
             </label>
           )}
         </form>
+      </Modal>
+
+      <Modal
+        title="Kullanıcı Oluşturuldu"
+        isOpen={Boolean(temporaryPasswordInfo)}
+        onClose={() => setTemporaryPasswordInfo(null)}
+        footer={
+          <Button onClick={() => setTemporaryPasswordInfo(null)}>Kapat</Button>
+        }
+      >
+        {temporaryPasswordInfo && (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-600">
+              <span className="font-medium text-slate-800">{temporaryPasswordInfo.name}</span>{" "}
+              ({temporaryPasswordInfo.email}) için geçici şifre oluşturuldu. Bu şifre yalnızca
+              şimdi gösterilir, daha sonra tekrar görüntülenemez — kullanıcıya güvenli bir
+              şekilde iletin.
+            </p>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <code className="text-base font-semibold tracking-wide text-slate-800">
+                {temporaryPasswordInfo.temporaryPassword}
+              </code>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(temporaryPasswordInfo.temporaryPassword)}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                aria-label="Kopyala"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Kullanıcı bu şifreyle ilk girişinde şifresini değiştirmek zorunda kalacaktır.
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );

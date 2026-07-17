@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import prisma from "../config/prisma.js";
+import { generateTemporaryPassword } from "../utils/generateTemporaryPassword.js";
 
 const validRoles = ["PERSONEL", "TEKNIK_PERSONEL", "ADMIN"];
 
@@ -16,31 +17,24 @@ const userSelect = {
   role: true,
   isActive: true,
   departmentId: true,
+  mustChangePassword: true,
   createdAt: true,
   updatedAt: true,
   department: true,
   specializations: true,
 };
 
+// Yönetici tarafından oluşturulan hesaplar için şifre admin tarafından
+// girilmez; sistem güvenli bir geçici şifre üretir ve hesap
+// mustChangePassword=true ile işaretlenir. Geçici şifre yalnızca bu
+// yanıtta düz metin olarak döner, bir daha hiçbir yerden okunamaz.
 export const createUser = async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      role = "PERSONEL",
-      departmentId,
-    } = req.body;
+    const { name, email, role = "PERSONEL", departmentId } = req.body;
 
-    if (!name?.trim() || !email?.trim() || !password) {
+    if (!name?.trim() || !email?.trim()) {
       return res.status(400).json({
-        message: "Ad soyad, e-posta ve şifre zorunludur.",
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        message: "Şifre en az 6 karakter olmalıdır.",
+        message: "Ad soyad ve e-posta zorunludur.",
       });
     }
 
@@ -88,7 +82,8 @@ export const createUser = async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const temporaryPassword = generateTemporaryPassword();
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -97,6 +92,7 @@ export const createUser = async (req, res) => {
         password: hashedPassword,
         role,
         departmentId: parsedDepartmentId,
+        mustChangePassword: true,
       },
       select: userSelect,
     });
@@ -104,6 +100,7 @@ export const createUser = async (req, res) => {
     return res.status(201).json({
       message: "Kullanıcı oluşturuldu.",
       user,
+      temporaryPassword,
     });
   } catch (error) {
     console.error("createUser error:", error);
@@ -297,6 +294,19 @@ export const updateUser = async (req, res) => {
       if (!validRoles.includes(role)) {
         return res.status(400).json({
           message: "Geçersiz kullanıcı rolü.",
+        });
+      }
+
+      const isConvertingToTechnician =
+        role === "TEKNIK_PERSONEL" && existingUser.role !== "TEKNIK_PERSONEL";
+
+      if (
+        isConvertingToTechnician &&
+        (!Array.isArray(specializationIds) || specializationIds.length === 0)
+      ) {
+        return res.status(400).json({
+          message:
+            "Teknik personele dönüştürülürken en az bir uzmanlık alanı seçilmelidir.",
         });
       }
 

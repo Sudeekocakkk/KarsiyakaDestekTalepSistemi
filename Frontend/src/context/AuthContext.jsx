@@ -14,15 +14,17 @@ export const AuthProvider = ({ children }) => {
     if (!token) {
       setUser(null);
       setIsLoading(false);
-      return;
+      return null;
     }
 
     try {
       const data = await getMe();
       setUser(data.user);
+      return data.user;
     } catch (error) {
       tokenStorage.clear();
       setUser(null);
+      return null;
     } finally {
       setIsLoading(false);
     }

@@ -11,7 +11,10 @@ import {
   updateTicketStatus,
 } from "../controllers/ticket.controller.js";
 
-import { authenticate } from "../middlewares/auth.middleware.js";
+import {
+  authenticate,
+  requirePasswordChangeCompleted,
+} from "../middlewares/auth.middleware.js";
 import { authorize } from "../middlewares/role.middleware.js";
 import { uploadTicketImages } from "../middlewares/upload.middleware.js";
 import { validateCreateTicket } from "../validations/ticket.validation.js";
@@ -19,6 +22,7 @@ import { validateCreateTicket } from "../validations/ticket.validation.js";
 const router = express.Router();
 
 router.use(authenticate);
+router.use(requirePasswordChangeCompleted);
 
 router.post(
   "/",

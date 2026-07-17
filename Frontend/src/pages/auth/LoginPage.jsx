@@ -39,7 +39,9 @@ const LoginPage = () => {
     setIsSubmitting(true);
     try {
       const user = await login(form.email.trim(), form.password);
-      const redirectTo = location.state?.from?.pathname || roleHomePath[user.role] || "/";
+      const redirectTo = user.mustChangePassword
+        ? "/sifre-degistir"
+        : location.state?.from?.pathname || roleHomePath[user.role] || "/";
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err.message);

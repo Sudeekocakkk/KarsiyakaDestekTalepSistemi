@@ -26,6 +26,7 @@ import CreateTicketPage from "./pages/personnel/CreateTicketPage";
 
 import TicketDetailPage from "./pages/shared/TicketDetailPage";
 import ProfilePage from "./pages/shared/ProfilePage";
+import ChangePasswordPage from "./pages/shared/ChangePasswordPage";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
@@ -65,10 +66,11 @@ function App() {
 
       <Route path="/yetkisiz" element={<UnauthorizedPage />} />
 
-      {/* Ortak: Profil (tüm roller) */}
+      {/* Ortak: Profil ve şifre değiştirme (tüm roller) */}
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
           <Route path="/profil" element={<ProfilePage />} />
+          <Route path="/sifre-degistir" element={<ChangePasswordPage />} />
         </Route>
       </Route>
 

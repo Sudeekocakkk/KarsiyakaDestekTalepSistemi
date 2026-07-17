@@ -47,6 +47,7 @@ export const setupAdmin = async (req, res) => {
         role: true,
         isActive: true,
         departmentId: true,
+        mustChangePassword: true,
         createdAt: true,
       },
     });
@@ -146,6 +147,10 @@ export const register = async (req, res) => {
 
         isActive: true,
         departmentId: parsedDepartmentId,
+
+        // Kendi hesabını oluşturan kullanıcı şifresini kendi belirlediği
+        // için zorunlu şifre değişikliğine tabi değildir.
+        mustChangePassword: false,
       },
       select: {
         id: true,
@@ -156,6 +161,7 @@ export const register = async (req, res) => {
         isActive: true,
         departmentId: true,
         department: true,
+        mustChangePassword: true,
         createdAt: true,
       },
     });
@@ -228,6 +234,7 @@ export const login = async (req, res) => {
         isActive: user.isActive,
         departmentId: user.departmentId,
         department: user.department,
+        mustChangePassword: user.mustChangePassword,
         createdAt: user.createdAt,
       },
     });
@@ -253,6 +260,7 @@ export const getMe = async (req, res) => {
         role: true,
         isActive: true,
         departmentId: true,
+        mustChangePassword: true,
         createdAt: true,
         updatedAt: true,
         department: true,
@@ -273,6 +281,68 @@ export const getMe = async (req, res) => {
 
     return res.status(500).json({
       message: "Kullanıcı bilgileri alınırken bir hata oluştu.",
+    });
+  }
+};
+
+// Oturum açmış herhangi bir kullanıcı kendi şifresini değiştirebilir.
+// mustChangePassword=true olan kullanıcılar için bu, engeli kaldıran tek yoldur.
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "Mevcut şifre ve yeni şifre zorunludur.",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Yeni şifre en az 6 karakter olmalıdır.",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: req.user.id,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Kullanıcı bulunamadı.",
+      });
+    }
+
+    const passwordMatches = await bcrypt.compare(currentPassword, user.password);
+
+    if (!passwordMatches) {
+      return res.status(401).json({
+        message: "Mevcut şifre hatalı.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: false,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Şifreniz başarıyla güncellendi.",
+    });
+  } catch (error) {
+    console.error("Şifre değiştirme hatası:", error);
+
+    return res.status(500).json({
+      message: "Şifre değiştirilirken bir hata oluştu.",
     });
   }
 };
