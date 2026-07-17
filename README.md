@@ -1,4 +1,6 @@
-![Karşıyaka Destek](./assets/afis.png)
+<p align="center">
+  <img src="./Frontend/src/assets/afis.png" alt="Karşıyaka Destek" width="100%">
+</p>
 
 # Karşıyaka Destek
 
