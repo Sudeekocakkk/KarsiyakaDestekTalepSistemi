@@ -60,9 +60,8 @@ app.use("/api/specializations", specializationRoutes);
 
 app.use(
   "/uploads",
-  express.static(path.join(__dirname, "uploads"))
+  express.static(path.join(__dirname, "../uploads"))
 );
-
 app.use(notFound);
 app.use(errorHandler);
 

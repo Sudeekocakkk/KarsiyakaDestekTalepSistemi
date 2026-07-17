@@ -587,16 +587,26 @@ export const updateTicketStatus = async (req, res) => {
     }
 
     const ticket = await prisma.ticket.findUnique({
-      where: {
-        id: ticketId,
-      },
-    });
+  where: {
+    id: ticketId,
+  },
+});
 
-    if (!ticket) {
-      return res.status(404).json({
-        message: "Talep bulunamadı.",
-      });
-    }
+if (!ticket) {
+  return res.status(404).json({
+    message: "Talep bulunamadı.",
+  });
+}
+
+if (
+  req.user.role === "TEKNIK_PERSONEL" &&
+  ticket.assignedToId !== req.user.id
+) {
+  return res.status(403).json({
+    message: "Yalnızca size atanmış taleplerin durumunu güncelleyebilirsiniz.",
+  });
+}
+
 
     const updatedTicket = await prisma.ticket.update({
       where: {

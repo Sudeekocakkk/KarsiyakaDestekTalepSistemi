@@ -52,13 +52,13 @@ router.patch(
 
 router.patch(
   "/:id/status",
-  authorize("ADMIN"),
+  authorize("ADMIN", "TEKNIK_PERSONEL"),
   updateTicketStatus
 );
 
 router.patch(
   "/:id/solution",
-  authorize("ADMIN"),
+  authorize("ADMIN", "TEKNIK_PERSONEL"),
   addSolution
 );
 
