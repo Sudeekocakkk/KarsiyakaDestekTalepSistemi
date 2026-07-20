@@ -4,6 +4,7 @@ import {
   deactivateUser,
   getUserById,
   getUsers,
+  updateMe,
   updateUser,
 } from "../controllers/user.controller.js";
 import {
@@ -16,6 +17,11 @@ const router = express.Router();
 
 router.use(authenticate);
 router.use(requirePasswordChangeCompleted);
+
+// Oturum açmış herhangi bir rol kendi profilini bu uçtan günceller;
+// bu yüzden aşağıdaki ADMIN yetki kapısından önce tanımlanır.
+router.patch("/me", updateMe);
+
 router.use(authorize("ADMIN"));
 
 router.post("/", createUser);

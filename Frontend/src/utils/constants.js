@@ -43,6 +43,17 @@ export const TICKET_STATUS_STYLES = {
   IPTAL_EDILDI: "bg-rose-50 text-rose-700 border border-rose-200",
 };
 
+// Dashboard pasta grafiğinde TICKET_STATUS_STYLES ile aynı renk ailesini
+// kullanan hex karşılıkları (recharts <Cell> doğrudan hex/CSS renk bekler).
+export const TICKET_STATUS_CHART_COLORS = {
+  YENI: "#0284c7",
+  ATANDI: "#7c3aed",
+  ISLEMDE: "#d97706",
+  BEKLEMEDE: "#ea580c",
+  COZULDU: "#059669",
+  IPTAL_EDILDI: "#e11d48",
+};
+
 export const TICKET_PRIORITY = {
   DUSUK: "DUSUK",
   NORMAL: "NORMAL",

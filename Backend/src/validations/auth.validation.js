@@ -16,7 +16,7 @@ export const UNSUPPORTED_EMAIL_DOMAIN_MESSAGE =
 
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const isAllowedRegistrationEmail = (email) => {
+export const isAllowedRegistrationEmail = (email) => {
   const normalized = email.trim().toLowerCase();
 
   if (!EMAIL_FORMAT_REGEX.test(normalized)) {

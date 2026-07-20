@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ClipboardList, Clock, Wrench, CheckCircle2, Plus } from "lucide-react";
 import { getMyTickets } from "../../api/ticket.api";
 import StatCard from "../../components/common/StatCard";
@@ -9,10 +9,12 @@ import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
 import EmptyState from "../../components/common/EmptyState";
+import TicketStatusPieChart from "../../components/common/TicketStatusPieChart";
 import { formatDateTime } from "../../utils/formatters";
-import { TICKET_STATUS } from "../../utils/constants";
+import { TICKET_STATUS, TICKET_STATUS_OPTIONS } from "../../utils/constants";
 
 const PersonnelDashboardPage = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -43,6 +45,18 @@ const PersonnelDashboardPage = () => {
     [tickets]
   );
 
+  const statusCounts = useMemo(() => {
+    const counts = Object.fromEntries(TICKET_STATUS_OPTIONS.map((status) => [status, 0]));
+    tickets.forEach((ticket) => {
+      if (counts[ticket.status] !== undefined) counts[ticket.status] += 1;
+    });
+    return counts;
+  }, [tickets]);
+
+  const handleStatusSliceClick = (status) => {
+    navigate(`/personel/taleplerim?status=${status}`);
+  };
+
   const recentTickets = tickets.slice(0, 5);
 
   if (isLoading) return <Loader label="Talepler yükleniyor..." />;
@@ -68,6 +82,11 @@ const PersonnelDashboardPage = () => {
         <StatCard label="Bekleyen" value={counts.pending} icon={Clock} color="violet" />
         <StatCard label="İşlemde" value={counts.inProgress} icon={Wrench} color="amber" />
         <StatCard label="Tamamlanan" value={counts.solved} icon={CheckCircle2} color="emerald" />
+      </div>
+
+      <div className="rounded-xl2 bg-white p-5 shadow-card">
+        <p className="mb-4 text-sm font-semibold text-slate-700">Duruma Göre Talep Dağılımı</p>
+        <TicketStatusPieChart statusCounts={statusCounts} onSliceClick={handleStatusSliceClick} />
       </div>
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">

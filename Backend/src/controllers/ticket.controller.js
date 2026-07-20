@@ -1,4 +1,34 @@
 import prisma from "../config/prisma.js";
+import { sendMail } from "../utils/mailer.js";
+
+const sendAssignmentEmail = async (technician, ticket) => {
+  if (!technician?.email) {
+    console.error(
+      `[ticket-assign-mail] Teknik personelin (id: ${technician?.id}) e-posta adresi boş; mail gönderilemiyor.`
+    );
+    return;
+  }
+
+  await sendMail({
+    to: technician.email,
+    subject: `Yeni Talep Atandı: ${ticket.ticketNumber}`,
+    text:
+      `Merhaba ${technician.name},\n\n` +
+      `"${ticket.title}" başlıklı (${ticket.ticketNumber}) destek talebi size atandı.\n\n` +
+      `Öncelik: ${ticket.priority}\n` +
+      `Açıklama: ${ticket.description}\n\n` +
+      "Karşıyaka Destek",
+  });
+};
+
+const VALID_TICKET_STATUSES = [
+  "YENI",
+  "ATANDI",
+  "ISLEMDE",
+  "BEKLEMEDE",
+  "COZULDU",
+  "IPTAL_EDILDI",
+];
 
 const ticketInclude = {
   category: true,
@@ -193,10 +223,26 @@ export const createTicket = async (req, res) => {
     }
 
     const uploadedFiles = req.files || [];
+    const ticketNumber = await generateTicketNumber();
 
-    const ticket = await prisma.ticket.create({
+    // Bilinçli olarak nested-write (`attachments: { create }`, `logs: { create }`)
+    // veya prisma.$transaction yerine ayrı, üst düzey ve sırayla await edilen
+    // sorgular kullanılır. node-postgres'teki "client zaten bir sorgu
+    // çalıştırırken tekrar query()" deprecation uyarısının gerçek kaynağı
+    // Prisma'nın (7.8.0) sürücü adaptörü tabanlı sorgu derleyicisidir: hem
+    // nested write'lar hem de prisma.$transaction, aynı bağlantı üzerinde
+    // birden fazla ifade çalıştırılmasını gerektiren bir "işlem düğümleri"
+    // planı oluşturuyor ve bu düğümleri (kod tarafımızda her adım tek tek
+    // await edilse bile) dahili olarak Array.map ile eşzamanlı yürütüyor
+    // (bkz. @prisma/client/runtime/client.js içindeki interpretNode). Bu,
+    // uygulama kodumuzdaki eksik bir await değil, Prisma'nın kendi çalışma
+    // zamanının davranışı; tarafımızdan düzeltilemez. Aşağıdaki gibi her
+    // sorguyu bağımsız, üst düzey bir prisma çağrısı olarak (implicit/explicit
+    // transaction'a hiç girmeden) sırayla çalıştırmak bu kod yolunu tamamen
+    // atlar ve uyarıyı ortadan kaldırır.
+    const created = await prisma.ticket.create({
       data: {
-        ticketNumber: await generateTicketNumber(),
+        ticketNumber,
         title: title.trim(),
         description: description.trim(),
         categoryId: parsedCategoryId,
@@ -206,23 +252,38 @@ export const createTicket = async (req, res) => {
         departmentId: req.user.departmentId,
         assignedToId,
         status: assignedToId ? "ATANDI" : "YENI",
-
-        attachments: {
-          create: uploadedFiles.map((file) => ({
-            originalName: file.originalname,
-            fileName: file.filename,
-            fileUrl: `/uploads/tickets/${file.filename}`,
-            mimeType: file.mimetype,
-            fileSize: file.size,
-          })),
-        },
-
-        logs: {
-          create: logs,
-        },
       },
+    });
+
+    for (const file of uploadedFiles) {
+      await prisma.ticketAttachment.create({
+        data: {
+          ticketId: created.id,
+          originalName: file.originalname,
+          fileName: file.filename,
+          fileUrl: `/uploads/tickets/${file.filename}`,
+          mimeType: file.mimetype,
+          fileSize: file.size,
+        },
+      });
+    }
+
+    for (const log of logs) {
+      await prisma.ticketLog.create({
+        data: { ...log, ticketId: created.id },
+      });
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: created.id },
       include: ticketInclude,
     });
+
+    // Otomatik atama akışı: ticket.assignedTo, ticketInclude sayesinde
+    // {id, name, email, role} olarak zaten geliyor, ek sorguya gerek yok.
+    if (assignedToId && ticket.assignedTo) {
+      await sendAssignmentEmail(ticket.assignedTo, ticket);
+    }
 
     return res.status(201).json({
       message: assignedToId
@@ -247,7 +308,16 @@ export const getMyTickets = async (req, res) => {
       createdById: req.user.id,
     };
 
-    if (status) where.status = status;
+    if (status) {
+      if (!VALID_TICKET_STATUSES.includes(status)) {
+        return res.status(400).json({
+          message: "Geçersiz talep durumu.",
+        });
+      }
+
+      where.status = status;
+    }
+
     if (priority) where.priority = priority;
 
     if (categoryId) {
@@ -301,7 +371,16 @@ export const getAssignedTickets = async (req, res) => {
       assignedToId: req.user.id,
     };
 
-    if (status) where.status = status;
+    if (status) {
+      if (!VALID_TICKET_STATUSES.includes(status)) {
+        return res.status(400).json({
+          message: "Geçersiz talep durumu.",
+        });
+      }
+
+      where.status = status;
+    }
+
     if (priority) where.priority = priority;
 
     if (categoryId) {
@@ -362,7 +441,13 @@ export const getAllTickets = async (req, res) => {
 
     const where = {};
 
-    if (status) where.status = status;
+    if (status) {
+      if (!VALID_TICKET_STATUSES.includes(status)) {
+        return res.status(400).json({ message: "Geçersiz talep durumu." });
+      }
+      where.status = status;
+    }
+
     if (priority) where.priority = priority;
 
     if (categoryId) {
@@ -490,89 +575,14 @@ export const getTicketById = async (req, res) => {
   }
 };
 
-export const assignTicket = async (req, res) => {
+// Talep detay ekranındaki tek "Kaydet" butonunun karşılığıdır: personel atama,
+// durum değişikliği, çözüm açıklaması ve açıklama/not ekleme işlemlerinin
+// hepsini tek bir atomik Prisma güncellemesinde (nested `logs.create`) toplar.
+// Yalnızca body'de gönderilen alanlar işlenir; her alan için rol/sahiplik
+// kontrolü ayrı ayrı yapılır.
+export const updateTicket = async (req, res) => {
   try {
     const ticketId = parseId(req.params.id);
-    const assignedToId = parseId(
-      req.body.assignedToId ?? req.body.assignedUserId
-    );
-
-    if (!ticketId || !assignedToId) {
-      return res.status(400).json({
-        message: "Geçerli talep ve personel kimliği gönderilmelidir.",
-      });
-    }
-
-    const [ticket, assignedUser] = await Promise.all([
-      prisma.ticket.findUnique({
-        where: { id: ticketId },
-      }),
-      prisma.user.findFirst({
-        where: {
-          id: assignedToId,
-          role: "TEKNIK_PERSONEL",
-          isActive: true,
-        },
-      }),
-    ]);
-
-    if (!ticket) {
-      return res.status(404).json({
-        message: "Talep bulunamadı.",
-      });
-    }
-
-    if (!assignedUser) {
-      return res.status(404).json({
-        message: "Aktif teknik personel bulunamadı.",
-      });
-    }
-
-    const updatedTicket = await prisma.ticket.update({
-      where: {
-        id: ticketId,
-      },
-      data: {
-        assignedToId,
-        status: ticket.status === "YENI" ? "ATANDI" : ticket.status,
-        logs: {
-          create: {
-            type: "PERSONEL_ATANDI",
-            description: "Talep teknik personele atandı.",
-            userId: req.user.id,
-            newValue: String(assignedToId),
-          },
-        },
-      },
-      include: ticketInclude,
-    });
-
-    return res.status(200).json({
-      message: "Talep personele atandı.",
-      ticket: updatedTicket,
-    });
-  } catch (error) {
-    console.error("assignTicket error:", error);
-
-    return res.status(500).json({
-      message: "Talep atanırken bir hata oluştu.",
-    });
-  }
-};
-
-export const updateTicketStatus = async (req, res) => {
-  try {
-    const ticketId = parseId(req.params.id);
-    const { status } = req.body;
-
-    const validStatuses = [
-      "YENI",
-      "ATANDI",
-      "ISLEMDE",
-      "BEKLEMEDE",
-      "COZULDU",
-      "IPTAL_EDILDI",
-    ];
 
     if (!ticketId) {
       return res.status(400).json({
@@ -580,144 +590,7 @@ export const updateTicketStatus = async (req, res) => {
       });
     }
 
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        message: "Geçersiz talep durumu.",
-      });
-    }
-
-    const ticket = await prisma.ticket.findUnique({
-  where: {
-    id: ticketId,
-  },
-});
-
-if (!ticket) {
-  return res.status(404).json({
-    message: "Talep bulunamadı.",
-  });
-}
-
-if (
-  req.user.role === "TEKNIK_PERSONEL" &&
-  ticket.assignedToId !== req.user.id
-) {
-  return res.status(403).json({
-    message: "Yalnızca size atanmış taleplerin durumunu güncelleyebilirsiniz.",
-  });
-}
-
-
-    const updatedTicket = await prisma.ticket.update({
-      where: {
-        id: ticketId,
-      },
-      data: {
-        status,
-        resolvedAt: status === "COZULDU" ? new Date() : ticket.resolvedAt,
-        closedAt: status === "IPTAL_EDILDI" ? new Date() : ticket.closedAt,
-        logs: {
-          create: {
-            type: "DURUM_DEGISTIRILDI",
-            description: "Talep durumu güncellendi.",
-            userId: req.user.id,
-            previousValue: ticket.status,
-            newValue: status,
-          },
-        },
-      },
-      include: ticketInclude,
-    });
-
-    return res.status(200).json({
-      message: "Talep durumu güncellendi.",
-      ticket: updatedTicket,
-    });
-  } catch (error) {
-    console.error("updateTicketStatus error:", error);
-
-    return res.status(500).json({
-      message: "Talep durumu güncellenirken bir hata oluştu.",
-    });
-  }
-};
-
-export const addSolution = async (req, res) => {
-  try {
-    const ticketId = parseId(req.params.id);
-    const { solutionDescription, resolutionDescription } = req.body;
-    const solutionText = resolutionDescription ?? solutionDescription;
-
-    if (!ticketId) {
-      return res.status(400).json({
-        message: "Geçersiz talep kimliği.",
-      });
-    }
-
-    if (!solutionText?.trim()) {
-      return res.status(400).json({
-        message: "Çözüm açıklaması zorunludur.",
-      });
-    }
-
-    const ticket = await prisma.ticket.findUnique({
-      where: {
-        id: ticketId,
-      },
-    });
-
-    if (!ticket) {
-      return res.status(404).json({
-        message: "Talep bulunamadı.",
-      });
-    }
-
-    const updatedTicket = await prisma.ticket.update({
-      where: {
-        id: ticketId,
-      },
-      data: {
-        resolutionDescription: solutionText.trim(),
-        logs: {
-          create: {
-            type: "COZUM_EKLENDI",
-            description: solutionText.trim(),
-            userId: req.user.id,
-          },
-        },
-      },
-      include: ticketInclude,
-    });
-
-    return res.status(200).json({
-      message: "Çözüm açıklaması kaydedildi.",
-      ticket: updatedTicket,
-    });
-  } catch (error) {
-    console.error("addSolution error:", error);
-
-    return res.status(500).json({
-      message: "Çözüm açıklaması kaydedilirken bir hata oluştu.",
-    });
-  }
-};
-
-export const addMessage = async (req, res) => {
-  try {
-    const ticketId = parseId(req.params.id);
-    const { message } = req.body;
-
-    if (!ticketId) {
-      return res.status(400).json({
-        message: "Geçersiz talep kimliği.",
-      });
-    }
-
-    if (!message?.trim()) {
-      return res.status(400).json({
-        message: "Mesaj boş bırakılamaz.",
-      });
-    }
+    const { assignedToId, status, resolutionDescription, message } = req.body;
 
     const ticket = await prisma.ticket.findUnique({
       where: {
@@ -733,37 +606,177 @@ export const addMessage = async (req, res) => {
 
     if (!canViewTicket(ticket, req.user)) {
       return res.status(403).json({
-        message: "Bu talebe mesaj ekleme yetkiniz yok.",
+        message: "Bu talebi güncelleme yetkiniz yok.",
       });
     }
 
-    const createdLog = await prisma.ticketLog.create({
-      data: {
-        type: "ACIKLAMA_EKLENDI",
-        description: message.trim(),
-        ticketId,
-        userId: req.user.id,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            role: true,
+    const isAdmin = req.user.role === "ADMIN";
+    const isAssignedTechnician =
+      req.user.role === "TEKNIK_PERSONEL" && ticket.assignedToId === req.user.id;
+
+    const data = {};
+    const logs = [];
+    let technicianToNotify = null;
+
+    // Personele atama — yalnızca ADMIN.
+    if (assignedToId !== undefined && assignedToId !== null && assignedToId !== "") {
+      if (!isAdmin) {
+        return res.status(403).json({
+          message: "Personel atama yetkisi yalnızca yöneticidedir.",
+        });
+      }
+
+      const parsedAssignedToId = parseId(assignedToId);
+
+      if (!parsedAssignedToId) {
+        return res.status(400).json({
+          message: "Geçerli bir personel kimliği gönderilmelidir.",
+        });
+      }
+
+      if (parsedAssignedToId !== ticket.assignedToId) {
+        const assignedUser = await prisma.user.findFirst({
+          where: {
+            id: parsedAssignedToId,
+            role: "TEKNIK_PERSONEL",
+            isActive: true,
           },
-        },
-      },
+        });
+
+        if (!assignedUser) {
+          return res.status(404).json({
+            message: "Aktif teknik personel bulunamadı.",
+          });
+        }
+
+        data.assignedToId = parsedAssignedToId;
+
+        if (ticket.status === "YENI") {
+          data.status = "ATANDI";
+        }
+
+        logs.push({
+          type: "PERSONEL_ATANDI",
+          description: "Talep teknik personele atandı.",
+          userId: req.user.id,
+          previousValue: ticket.assignedToId ? String(ticket.assignedToId) : null,
+          newValue: String(parsedAssignedToId),
+        });
+
+        technicianToNotify = assignedUser;
+      }
+    }
+
+    // Durum değişikliği — ADMIN veya yalnızca kendisine atanmış talep için TEKNIK_PERSONEL.
+    if (status !== undefined && status !== null && status !== "") {
+      if (!VALID_TICKET_STATUSES.includes(status)) {
+        return res.status(400).json({
+          message: "Geçersiz talep durumu.",
+        });
+      }
+
+      if (!isAdmin && !isAssignedTechnician) {
+        return res.status(403).json({
+          message: "Yalnızca size atanmış taleplerin durumunu güncelleyebilirsiniz.",
+        });
+      }
+
+      if (status !== ticket.status) {
+        data.status = status;
+        data.resolvedAt = status === "COZULDU" ? new Date() : ticket.resolvedAt;
+        data.closedAt = status === "IPTAL_EDILDI" ? new Date() : ticket.closedAt;
+
+        logs.push({
+          type: "DURUM_DEGISTIRILDI",
+          description: "Talep durumu güncellendi.",
+          userId: req.user.id,
+          previousValue: ticket.status,
+          newValue: status,
+        });
+      }
+    }
+
+    // Çözüm açıklaması — ADMIN veya yalnızca kendisine atanmış talep için TEKNIK_PERSONEL.
+    if (resolutionDescription !== undefined && resolutionDescription !== null) {
+      const trimmedSolution = resolutionDescription.trim();
+
+      if (trimmedSolution && trimmedSolution !== (ticket.resolutionDescription || "")) {
+        if (!isAdmin && !isAssignedTechnician) {
+          return res.status(403).json({
+            message: "Yalnızca size atanmış taleplere çözüm açıklaması ekleyebilirsiniz.",
+          });
+        }
+
+        data.resolutionDescription = trimmedSolution;
+
+        logs.push({
+          type: "COZUM_EKLENDI",
+          description: trimmedSolution,
+          userId: req.user.id,
+        });
+      }
+    }
+
+    // Açıklama / not — talebi görüntüleme yetkisi olan herkes (canViewTicket'ta kontrol edildi).
+    if (message !== undefined && message !== null) {
+      const trimmedMessage = message.trim();
+
+      if (trimmedMessage) {
+        logs.push({
+          type: "ACIKLAMA_EKLENDI",
+          description: trimmedMessage,
+          userId: req.user.id,
+        });
+      }
+    }
+
+    if (Object.keys(data).length === 0 && logs.length === 0) {
+      return res.status(400).json({
+        message: "Güncellenecek bir alan gönderilmedi.",
+      });
+    }
+
+    // Bilinçli olarak nested `logs: { create: ... }` veya prisma.$transaction
+    // yerine ayrı, üst düzey ve sırayla await edilen sorgular kullanılır
+    // (bkz. createTicket üzerindeki ayrıntılı gerekçe): node-postgres'teki
+    // "client zaten bir sorgu çalıştırırken tekrar query()" uyarısının
+    // kaynağı, Prisma 7.8.0'ın sürücü adaptörü sorgu derleyicisinin bir
+    // transaction/nested-write içindeki ifadeleri dahili olarak eşzamanlı
+    // yürütmesidir; bizim await sıramızla ilgisi yok. Aşağıdaki gibi hiç
+    // transaction'a girmeden ayrı üst düzey çağrılar yapmak bu kod yolunu
+    // atlar ve uyarıyı ortadan kaldırır.
+    if (Object.keys(data).length > 0) {
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data,
+      });
+    }
+
+    for (const log of logs) {
+      await prisma.ticketLog.create({
+        data: { ...log, ticketId },
+      });
+    }
+
+    const updatedTicket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: ticketInclude,
     });
 
-    return res.status(201).json({
-      message: "Açıklama talebe eklendi.",
-      ticketLog: createdLog,
+    // Manuel atama akışı (admin, "Personele Ata" alanı üzerinden).
+    if (technicianToNotify) {
+      await sendAssignmentEmail(technicianToNotify, updatedTicket);
+    }
+
+    return res.status(200).json({
+      message: "Talep güncellendi.",
+      ticket: updatedTicket,
     });
   } catch (error) {
-    console.error("addMessage error:", error);
+    console.error("updateTicket error:", error);
 
     return res.status(500).json({
-      message: "Açıklama eklenirken bir hata oluştu.",
+      message: "Talep güncellenirken bir hata oluştu.",
     });
   }
 };

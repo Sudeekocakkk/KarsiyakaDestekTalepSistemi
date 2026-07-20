@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { getAllTickets } from "../../api/ticket.api";
 import { getCategories } from "../../api/category.api";
 import Loader from "../../components/common/Loader";
@@ -9,7 +8,10 @@ import EmptyState from "../../components/common/EmptyState";
 import StatusBadge from "../../components/common/StatusBadge";
 import PriorityBadge from "../../components/common/PriorityBadge";
 import { inputClass } from "../../components/common/FormField";
+import ScrollableListContainer from "../../components/common/ScrollableListContainer";
+import ListSearchInput from "../../components/common/ListSearchInput";
 import { formatDateTime } from "../../utils/formatters";
+import { buildTicketSearchFields, matchesSearch } from "../../utils/search";
 import {
   TICKET_PRIORITY_LABELS,
   TICKET_PRIORITY_OPTIONS,
@@ -18,17 +20,29 @@ import {
 } from "../../utils/constants";
 
 const TicketManagementPage = () => {
+  const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  // Talep no, başlık, durum, kategori ve personel araması tamamen
+  // frontend'de yapılır: liste zaten (durum/öncelik/kategori filtreleriyle)
+  // sayfalanmadan tek seferde çekiliyor, bu yüzden ek bir backend
+  // parametresi gerekmez (bkz. utils/search.js).
+  const [searchTerm, setSearchTerm] = useState("");
 
+  // Dashboard'daki durum grafiğinden ?status=... ile gelen filtre, sayfa
+  // açılırken otomatik uygulanır (bkz. AdminDashboardPage).
   const [filters, setFilters] = useState({
-    status: "",
+    status: searchParams.get("status") || "",
     priority: "",
     categoryId: "",
-    search: "",
   });
+
+  const visibleTickets = useMemo(
+    () => tickets.filter((ticket) => matchesSearch(searchTerm, buildTicketSearchFields(ticket))),
+    [tickets, searchTerm]
+  );
 
   useEffect(() => {
     getCategories({ includeInactive: "true" })
@@ -45,7 +59,6 @@ const TicketManagementPage = () => {
         if (filters.status) params.status = filters.status;
         if (filters.priority) params.priority = filters.priority;
         if (filters.categoryId) params.categoryId = filters.categoryId;
-        if (filters.search) params.search = filters.search;
 
         const data = await getAllTickets(params);
         setTickets(data.tickets);
@@ -56,8 +69,7 @@ const TicketManagementPage = () => {
       }
     };
 
-    const timeout = setTimeout(load, 300);
-    return () => clearTimeout(timeout);
+    load();
   }, [filters]);
 
   const handleFilterChange = (event) => {
@@ -73,16 +85,11 @@ const TicketManagementPage = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-3 rounded-xl2 bg-white p-4 shadow-card sm:grid-cols-2 lg:grid-cols-4">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            name="search"
-            className={`${inputClass} pl-9`}
-            placeholder="Başlık veya açıklamada ara..."
-            value={filters.search}
-            onChange={handleFilterChange}
-          />
-        </div>
+        <ListSearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder="Talep no, başlık, durum, kategori veya personel ara..."
+        />
 
         <select name="status" className={inputClass} value={filters.status} onChange={handleFilterChange}>
           <option value="">Tüm Durumlar</option>
@@ -119,23 +126,25 @@ const TicketManagementPage = () => {
           <Loader label="Talepler yükleniyor..." />
         ) : tickets.length === 0 ? (
           <EmptyState title="Filtreye uygun talep bulunamadı" />
+        ) : visibleTickets.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableListContainer rowCount={visibleTickets.length}>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="pb-2 pr-4">Talep No</th>
-                  <th className="pb-2 pr-4">Başlık</th>
-                  <th className="pb-2 pr-4">Müdürlük</th>
-                  <th className="pb-2 pr-4">Oluşturan</th>
-                  <th className="pb-2 pr-4">Atanan</th>
-                  <th className="pb-2 pr-4">Öncelik</th>
-                  <th className="pb-2 pr-4">Durum</th>
-                  <th className="pb-2 pr-4">Tarih</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Talep No</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Başlık</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Müdürlük</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Oluşturan</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Atanan</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Öncelik</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Durum</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Tarih</th>
                 </tr>
               </thead>
               <tbody>
-                {tickets.map((ticket) => (
+                {visibleTickets.map((ticket) => (
                   <tr key={ticket.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                     <td className="py-2.5 pr-4">
                       <Link to={`/admin/talepler/${ticket.id}`} className="font-medium text-navy-700 hover:underline">
@@ -157,7 +166,7 @@ const TicketManagementPage = () => {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableListContainer>
         )}
       </div>
     </div>

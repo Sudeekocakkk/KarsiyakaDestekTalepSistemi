@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ClipboardList,
   Clock,
@@ -26,14 +26,32 @@ import PriorityBadge from "../../components/common/PriorityBadge";
 import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
 import EmptyState from "../../components/common/EmptyState";
+import TicketStatusPieChart from "../../components/common/TicketStatusPieChart";
 import { formatDateTime } from "../../utils/formatters";
 
 const AdminDashboardPage = () => {
+  const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
   const [categoryReport, setCategoryReport] = useState([]);
   const [recentTickets, setRecentTickets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const statusCounts = useMemo(
+    () => ({
+      YENI: summary?.newTickets ?? 0,
+      ATANDI: summary?.assignedTickets ?? 0,
+      ISLEMDE: summary?.inProgressTickets ?? 0,
+      BEKLEMEDE: summary?.waitingTickets ?? 0,
+      COZULDU: summary?.solvedTickets ?? 0,
+      IPTAL_EDILDI: summary?.cancelledTickets ?? 0,
+    }),
+    [summary]
+  );
+
+  const handleStatusSliceClick = (status) => {
+    navigate(`/admin/talepler?status=${status}`);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -71,6 +89,11 @@ const AdminDashboardPage = () => {
         <StatCard label="Çözülen Talepler" value={summary?.solvedTickets ?? 0} icon={CheckCircle2} color="emerald" />
         <StatCard label="İptal Edilen Talepler" value={summary?.cancelledTickets ?? 0} icon={XCircle} color="rose" />
         <StatCard label="Acil Öncelikli Talepler" value={summary?.urgentTickets ?? 0} icon={AlertTriangle} color="rose" />
+      </div>
+
+      <div className="rounded-xl2 bg-white p-5 shadow-card">
+        <p className="mb-4 text-sm font-semibold text-slate-700">Duruma Göre Talep Dağılımı</p>
+        <TicketStatusPieChart statusCounts={statusCounts} onSliceClick={handleStatusSliceClick} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

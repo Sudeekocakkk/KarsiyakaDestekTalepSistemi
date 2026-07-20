@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, PowerOff } from "lucide-react";
 import {
   createCategory,
@@ -13,6 +13,10 @@ import EmptyState from "../../components/common/EmptyState";
 import Modal from "../../components/common/Modal";
 import Button from "../../components/common/Button";
 import FormField, { inputClass } from "../../components/common/FormField";
+import Tooltip from "../../components/common/Tooltip";
+import ScrollableListContainer from "../../components/common/ScrollableListContainer";
+import ListSearchInput from "../../components/common/ListSearchInput";
+import { matchesSearch } from "../../utils/search";
 
 const emptyForm = { id: null, name: "", description: "", specializationId: "", isActive: true };
 
@@ -25,6 +29,15 @@ const CategoryManagementPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [modalMode, setModalMode] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredCategories = useMemo(
+    () =>
+      categories.filter((category) =>
+        matchesSearch(searchTerm, [category.name, category.description])
+      ),
+    [categories, searchTerm]
+  );
 
   const loadCategories = async () => {
     setIsLoading(true);
@@ -127,23 +140,32 @@ const CategoryManagementPage = () => {
       <ErrorAlert message={error} />
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">
+        <ListSearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder="Kategori ara..."
+          className="mb-4 max-w-sm"
+        />
+
         {isLoading ? (
           <Loader label="Kategoriler yükleniyor..." />
         ) : categories.length === 0 ? (
           <EmptyState title="Henüz kategori eklenmemiş" />
+        ) : filteredCategories.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableListContainer rowCount={filteredCategories.length}>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="pb-2 pr-4">Kategori Adı</th>
-                  <th className="pb-2 pr-4">Uzmanlık Alanı</th>
-                  <th className="pb-2 pr-4">Durum</th>
-                  <th className="pb-2 pr-4 text-right">İşlemler</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Kategori Adı</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Uzmanlık Alanı</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Durum</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4 text-right">İşlemler</th>
                 </tr>
               </thead>
               <tbody>
-                {categories.map((category) => (
+                {filteredCategories.map((category) => (
                   <tr key={category.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                     <td className="py-2.5 pr-4 font-medium text-slate-700">{category.name}</td>
                     <td className="py-2.5 pr-4 text-slate-500">
@@ -160,23 +182,27 @@ const CategoryManagementPage = () => {
                     </td>
                     <td className="py-2.5 pr-4">
                       <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(category)}
-                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                          aria-label="Düzenle"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        {category.isActive && (
+                        <Tooltip content="Düzenle">
                           <button
                             type="button"
-                            onClick={() => handleDeactivate(category)}
-                            className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
-                            aria-label="Pasif hale getir"
+                            onClick={() => openEdit(category)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            aria-label="Düzenle"
                           >
-                            <PowerOff className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </button>
+                        </Tooltip>
+                        {category.isActive && (
+                          <Tooltip content="Pasif Hale Getir">
+                            <button
+                              type="button"
+                              onClick={() => handleDeactivate(category)}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
+                              aria-label="Pasif hale getir"
+                            >
+                              <PowerOff className="h-4 w-4" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     </td>
@@ -184,7 +210,7 @@ const CategoryManagementPage = () => {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableListContainer>
         )}
       </div>
 

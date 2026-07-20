@@ -1,6 +1,13 @@
 import axiosClient from "./axiosClient";
 
-// Tüm endpointler ADMIN rolü gerektirir (bkz. Backend/src/routes/user.routes.js).
+// Aksi belirtilmedikçe tüm endpointler ADMIN rolü gerektirir
+// (bkz. Backend/src/routes/user.routes.js).
+
+// PATCH /api/users/me — oturum açmış herhangi bir rol kendi profilini
+// günceller (name, email, phone). Başka bir kullanıcı bu uçtan etkilenemez;
+// rol/departman/uzmanlık gibi yönetimsel alanlar desteklenmez.
+export const updateMe = (payload) =>
+  axiosClient.patch("/users/me", payload).then((res) => res.data);
 
 export const createUser = (payload) =>
   axiosClient.post("/users", payload).then((res) => res.data);

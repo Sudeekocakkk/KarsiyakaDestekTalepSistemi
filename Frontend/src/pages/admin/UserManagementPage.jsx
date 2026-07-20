@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, Pencil, UserX, Search, Copy } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Pencil, UserX, Copy } from "lucide-react";
 import { createUser, deactivateUser, getUsers, updateUser } from "../../api/user.api";
 import { getDepartments } from "../../api/department.api";
 import { getSpecializations } from "../../api/specialization.api";
@@ -9,6 +9,10 @@ import EmptyState from "../../components/common/EmptyState";
 import Modal from "../../components/common/Modal";
 import Button from "../../components/common/Button";
 import FormField, { inputClass } from "../../components/common/FormField";
+import Tooltip from "../../components/common/Tooltip";
+import ScrollableListContainer from "../../components/common/ScrollableListContainer";
+import ListSearchInput from "../../components/common/ListSearchInput";
+import { matchesSearch } from "../../utils/search";
 import { ROLES, ROLE_LABELS } from "../../utils/constants";
 import { formatDate } from "../../utils/formatters";
 
@@ -34,7 +38,12 @@ const UserManagementPage = () => {
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const [filters, setFilters] = useState({ role: "", isActive: "", search: "" });
+  const [filters, setFilters] = useState({ role: "", isActive: "" });
+  // Ad, e-posta, rol ve müdürlük araması tamamen frontend'de yapılır: rol/
+  // müdürlük eşleşmesi (Türkçe etiket veya ilişkili ad) backend'de karşılığı
+  // olmayan bilgiler olduğundan ve liste zaten sayfalanmadan tek seferde
+  // çekildiğinden, yeni bir backend endpointi/parametresi gerekmez.
+  const [searchTerm, setSearchTerm] = useState("");
   const [modalMode, setModalMode] = useState(null); // "create" | "edit"
   const [form, setForm] = useState(emptyForm);
   // Yeni oluşturulan kullanıcının geçici şifresi yalnızca bu oturumda,
@@ -48,7 +57,6 @@ const UserManagementPage = () => {
       const params = {};
       if (filters.role) params.role = filters.role;
       if (filters.isActive) params.isActive = filters.isActive;
-      if (filters.search) params.search = filters.search;
       const data = await getUsers(params);
       setUsers(data.users);
     } catch (err) {
@@ -58,14 +66,26 @@ const UserManagementPage = () => {
     }
   };
 
+  const visibleUsers = useMemo(
+    () =>
+      users.filter((user) =>
+        matchesSearch(searchTerm, [
+          user.name,
+          user.email,
+          ROLE_LABELS[user.role],
+          user.department?.name,
+        ])
+      ),
+    [users, searchTerm]
+  );
+
   useEffect(() => {
     getDepartments().then((data) => setDepartments(data.departments)).catch(() => {});
     getSpecializations().then((data) => setSpecializations(data.specializations)).catch(() => {});
   }, []);
 
   useEffect(() => {
-    const timeout = setTimeout(loadUsers, 300);
-    return () => clearTimeout(timeout);
+    loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
@@ -196,15 +216,11 @@ const UserManagementPage = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-3 rounded-xl2 bg-white p-4 shadow-card sm:grid-cols-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            className={`${inputClass} pl-9`}
-            placeholder="İsim veya e-posta ara..."
-            value={filters.search}
-            onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
-          />
-        </div>
+        <ListSearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder="Ad, e-posta, rol veya müdürlük ara..."
+        />
         <select
           className={inputClass}
           value={filters.role}
@@ -235,22 +251,24 @@ const UserManagementPage = () => {
           <Loader label="Kullanıcılar yükleniyor..." />
         ) : users.length === 0 ? (
           <EmptyState title="Kullanıcı bulunamadı" />
+        ) : visibleUsers.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableListContainer rowCount={visibleUsers.length}>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="pb-2 pr-4">Ad Soyad</th>
-                  <th className="pb-2 pr-4">E-posta</th>
-                  <th className="pb-2 pr-4">Rol</th>
-                  <th className="pb-2 pr-4">Müdürlük</th>
-                  <th className="pb-2 pr-4">Durum</th>
-                  <th className="pb-2 pr-4">Kayıt Tarihi</th>
-                  <th className="pb-2 pr-4 text-right">İşlemler</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Ad Soyad</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">E-posta</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Rol</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Müdürlük</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Durum</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4">Kayıt Tarihi</th>
+                  <th className="sticky top-0 z-10 bg-white pb-2 pr-4 text-right">İşlemler</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {visibleUsers.map((user) => (
                   <tr key={user.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                     <td className="py-2.5 pr-4 font-medium text-slate-700">{user.name}</td>
                     <td className="py-2.5 pr-4 text-slate-500">{user.email}</td>
@@ -268,23 +286,27 @@ const UserManagementPage = () => {
                     <td className="py-2.5 pr-4 text-slate-400">{formatDate(user.createdAt)}</td>
                     <td className="py-2.5 pr-4">
                       <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(user)}
-                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                          aria-label="Düzenle"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        {user.isActive && (
+                        <Tooltip content="Düzenle">
                           <button
                             type="button"
-                            onClick={() => handleDeactivate(user)}
-                            className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
-                            aria-label="Pasif hale getir"
+                            onClick={() => openEditModal(user)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            aria-label="Düzenle"
                           >
-                            <UserX className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </button>
+                        </Tooltip>
+                        {user.isActive && (
+                          <Tooltip content="Pasif Hale Getir">
+                            <button
+                              type="button"
+                              onClick={() => handleDeactivate(user)}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
+                              aria-label="Pasif hale getir"
+                            >
+                              <UserX className="h-4 w-4" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     </td>
@@ -292,7 +314,7 @@ const UserManagementPage = () => {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableListContainer>
         )}
       </div>
 
@@ -426,14 +448,16 @@ const UserManagementPage = () => {
               <code className="text-base font-semibold tracking-wide text-slate-800">
                 {temporaryPasswordInfo.temporaryPassword}
               </code>
-              <button
-                type="button"
-                onClick={() => navigator.clipboard?.writeText(temporaryPasswordInfo.temporaryPassword)}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
-                aria-label="Kopyala"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
+              <Tooltip content="Kopyala">
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(temporaryPasswordInfo.temporaryPassword)}
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                  aria-label="Kopyala"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </Tooltip>
             </div>
             <p className="text-xs text-slate-400">
               Kullanıcı bu şifreyle ilk girişinde şifresini değiştirmek zorunda kalacaktır.

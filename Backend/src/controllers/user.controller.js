@@ -1,6 +1,10 @@
 import bcrypt from "bcryptjs";
 import prisma from "../config/prisma.js";
 import { generateTemporaryPassword } from "../utils/generateTemporaryPassword.js";
+import {
+  isAllowedRegistrationEmail,
+  UNSUPPORTED_EMAIL_DOMAIN_MESSAGE,
+} from "../validations/auth.validation.js";
 
 const validRoles = ["PERSONEL", "TEKNIK_PERSONEL", "ADMIN"];
 
@@ -14,6 +18,7 @@ const userSelect = {
   id: true,
   name: true,
   email: true,
+  phone: true,
   role: true,
   isActive: true,
   departmentId: true,
@@ -442,6 +447,89 @@ export const updateUser = async (req, res) => {
 
     return res.status(500).json({
       message: "Kullanıcı güncellenirken bir hata oluştu.",
+    });
+  }
+};
+
+// Oturum açmış kullanıcının kendi profilini güncellemesi için kullanılır.
+// req.user.id dışında bir kullanıcı asla etkilenemez; rol, departman,
+// uzmanlık ve aktiflik gibi yönetimsel alanlar bilinçli olarak burada
+// desteklenmez (bkz. ADMIN'e özel updateUser).
+export const updateMe = async (req, res) => {
+  try {
+    const { name, phone, email } = req.body;
+
+    const data = {};
+
+    if (name !== undefined) {
+      if (!name?.trim()) {
+        return res.status(400).json({
+          message: "Ad soyad boş bırakılamaz.",
+        });
+      }
+
+      data.name = name.trim();
+    }
+
+    if (phone !== undefined) {
+      data.phone = phone?.trim() || null;
+    }
+
+    if (email !== undefined) {
+      if (!email?.trim()) {
+        return res.status(400).json({
+          message: "E-posta boş bırakılamaz.",
+        });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!isAllowedRegistrationEmail(normalizedEmail)) {
+        return res.status(400).json({
+          message: UNSUPPORTED_EMAIL_DOMAIN_MESSAGE,
+        });
+      }
+
+      if (normalizedEmail !== req.user.email) {
+        const emailOwner = await prisma.user.findUnique({
+          where: {
+            email: normalizedEmail,
+          },
+        });
+
+        if (emailOwner && emailOwner.id !== req.user.id) {
+          return res.status(409).json({
+            message: "Bu e-posta adresi başka bir kullanıcıya ait.",
+          });
+        }
+
+        data.email = normalizedEmail;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({
+        message: "Güncellenecek bir alan gönderilmedi.",
+      });
+    }
+
+    const user = await prisma.user.update({
+      where: {
+        id: req.user.id,
+      },
+      data,
+      select: userSelect,
+    });
+
+    return res.status(200).json({
+      message: "Profil bilgileriniz güncellendi.",
+      user,
+    });
+  } catch (error) {
+    console.error("updateMe error:", error);
+
+    return res.status(500).json({
+      message: "Profil güncellenirken bir hata oluştu.",
     });
   }
 };

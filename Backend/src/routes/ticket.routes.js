@@ -1,14 +1,11 @@
 import express from "express";
 import {
-  addMessage,
-  addSolution,
-  assignTicket,
   createTicket,
   getAllTickets,
   getAssignedTickets,
   getMyTickets,
   getTicketById,
-  updateTicketStatus,
+  updateTicket,
 } from "../controllers/ticket.controller.js";
 
 import {
@@ -44,24 +41,11 @@ router.get("/", authorize("ADMIN"), getAllTickets);
 
 router.get("/:id", getTicketById);
 
-router.patch(
-  "/:id/assign",
-  authorize("ADMIN"),
-  assignTicket
-);
-
-router.patch(
-  "/:id/status",
-  authorize("ADMIN", "TEKNIK_PERSONEL"),
-  updateTicketStatus
-);
-
-router.patch(
-  "/:id/solution",
-  authorize("ADMIN", "TEKNIK_PERSONEL"),
-  addSolution
-);
-
-router.post("/:id/messages", addMessage);
+// Talep detayındaki tek "Kaydet" butonunun karşılığı: personel atama, durum,
+// çözüm açıklaması ve açıklama/not alanlarından yalnızca gönderilenleri
+// günceller. Rol/sahiplik denetimi alan bazında controller içinde yapılır,
+// bu yüzden burada rota seviyesinde rol kısıtı uygulanmaz (PERSONEL de kendi
+// talebine not ekleyebilmelidir).
+router.patch("/:id", updateTicket);
 
 export default router;

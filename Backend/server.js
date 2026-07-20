@@ -1,12 +1,14 @@
 import "dotenv/config";
 import app from "./src/app.js";
 import prisma from "./src/config/prisma.js";
+import { verifyMailTransport } from "./src/utils/mailer.js";
 
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
     await prisma.$connect();
+    await verifyMailTransport();
 
     app.listen(PORT, () => {
       console.log(`Sunucu ${PORT} portunda çalışıyor.`);

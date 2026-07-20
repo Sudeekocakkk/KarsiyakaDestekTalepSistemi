@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getCategoryReport,
   getDepartmentReport,
@@ -9,6 +9,9 @@ import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
 import EmptyState from "../../components/common/EmptyState";
 import StatCard from "../../components/common/StatCard";
+import ScrollableListContainer from "../../components/common/ScrollableListContainer";
+import ListSearchInput from "../../components/common/ListSearchInput";
+import { matchesSearch } from "../../utils/search";
 import { ClipboardList, CheckCircle2, Wrench, XCircle } from "lucide-react";
 
 const ReportsPage = () => {
@@ -18,6 +21,10 @@ const ReportsPage = () => {
   const [personnelReport, setPersonnelReport] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [categorySearch, setCategorySearch] = useState("");
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [personnelSearch, setPersonnelSearch] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -43,6 +50,24 @@ const ReportsPage = () => {
     load();
   }, []);
 
+  const filteredCategoryReport = useMemo(
+    () =>
+      categoryReport.filter((item) =>
+        matchesSearch(categorySearch, [item.categoryName, item.isActive ? "Aktif" : "Pasif"])
+      ),
+    [categoryReport, categorySearch]
+  );
+
+  const filteredDepartmentReport = useMemo(
+    () => departmentReport.filter((item) => matchesSearch(departmentSearch, [item.departmentName])),
+    [departmentReport, departmentSearch]
+  );
+
+  const filteredPersonnelReport = useMemo(
+    () => personnelReport.filter((item) => matchesSearch(personnelSearch, [item.name, item.email])),
+    [personnelReport, personnelSearch]
+  );
+
   if (isLoading) return <Loader label="Raporlar yükleniyor..." />;
 
   return (
@@ -61,13 +86,21 @@ const ReportsPage = () => {
         <StatCard label="İptal Edilen" value={summary?.cancelledTickets ?? 0} icon={XCircle} color="rose" />
       </div>
 
-      <ReportSection title="Kategori Bazlı Rapor">
+      <ReportSection
+        title="Kategori Bazlı Rapor"
+        hasData={categoryReport.length > 0}
+        searchValue={categorySearch}
+        onSearchChange={setCategorySearch}
+        searchPlaceholder="Kategori ara..."
+      >
         {categoryReport.length === 0 ? (
           <EmptyState title="Kategori raporu yok" />
+        ) : filteredCategoryReport.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
           <ReportTable
             columns={["Kategori", "Durum", "Talep Sayısı"]}
-            rows={categoryReport.map((item) => [
+            rows={filteredCategoryReport.map((item) => [
               item.categoryName,
               item.isActive ? "Aktif" : "Pasif",
               item.ticketCount,
@@ -79,13 +112,19 @@ const ReportsPage = () => {
       <ReportSection
         title="Müdürlük Bazlı Rapor"
         note="Not: Backend'deki waitingTickets alanı, şemada bulunmayan bir durum değeriyle (BEKLIYOR) filtreleme yapıyor; bu nedenle her zaman 0 dönebilir."
+        hasData={departmentReport.length > 0}
+        searchValue={departmentSearch}
+        onSearchChange={setDepartmentSearch}
+        searchPlaceholder="Müdürlük ara..."
       >
         {departmentReport.length === 0 ? (
           <EmptyState title="Müdürlük raporu yok" />
+        ) : filteredDepartmentReport.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
           <ReportTable
             columns={["Müdürlük", "Personel Sayısı", "Toplam Talep", "Çözülen", "Bekleyen"]}
-            rows={departmentReport.map((item) => [
+            rows={filteredDepartmentReport.map((item) => [
               item.departmentName,
               item.userCount,
               item.totalTickets,
@@ -96,13 +135,21 @@ const ReportsPage = () => {
         )}
       </ReportSection>
 
-      <ReportSection title="Teknik Personel Performansı">
+      <ReportSection
+        title="Teknik Personel Performansı"
+        hasData={personnelReport.length > 0}
+        searchValue={personnelSearch}
+        onSearchChange={setPersonnelSearch}
+        searchPlaceholder="Personel ara..."
+      >
         {personnelReport.length === 0 ? (
           <EmptyState title="Personel performans verisi yok" />
+        ) : filteredPersonnelReport.length === 0 ? (
+          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
         ) : (
           <ReportTable
             columns={["Personel", "Toplam Atanan", "Çözülen", "İşlemde", "İptal", "Ort. Çözüm Süresi (saat)"]}
-            rows={personnelReport.map((item) => [
+            rows={filteredPersonnelReport.map((item) => [
               item.name,
               item.totalAssigned,
               item.solvedCount,
@@ -117,21 +164,37 @@ const ReportsPage = () => {
   );
 };
 
-const ReportSection = ({ title, note, children }) => (
+const ReportSection = ({
+  title,
+  note,
+  children,
+  hasData,
+  searchValue,
+  onSearchChange,
+  searchPlaceholder,
+}) => (
   <div className="rounded-xl2 bg-white p-5 shadow-card">
     <p className="mb-1 text-sm font-semibold text-slate-700">{title}</p>
     {note && <p className="mb-3 text-xs text-slate-400">{note}</p>}
+    {hasData && (
+      <ListSearchInput
+        value={searchValue}
+        onChange={onSearchChange}
+        placeholder={searchPlaceholder}
+        className="mb-4 max-w-sm"
+      />
+    )}
     {children}
   </div>
 );
 
 const ReportTable = ({ columns, rows }) => (
-  <div className="overflow-x-auto">
+  <ScrollableListContainer rowCount={rows.length}>
     <table className="w-full text-left text-sm">
       <thead>
         <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
           {columns.map((col) => (
-            <th key={col} className="pb-2 pr-4">
+            <th key={col} className="sticky top-0 z-10 bg-white pb-2 pr-4">
               {col}
             </th>
           ))}
@@ -151,7 +214,7 @@ const ReportTable = ({ columns, rows }) => (
         ))}
       </tbody>
     </table>
-  </div>
+  </ScrollableListContainer>
 );
 
 export default ReportsPage;

@@ -195,6 +195,7 @@ export const login = async (req, res) => {
       },
       include: {
         department: true,
+        specializations: true,
       },
     });
 
@@ -230,10 +231,12 @@ export const login = async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
         isActive: user.isActive,
         departmentId: user.departmentId,
         department: user.department,
+        specializations: user.specializations,
         mustChangePassword: user.mustChangePassword,
         createdAt: user.createdAt,
       },
@@ -257,6 +260,7 @@ export const getMe = async (req, res) => {
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
         departmentId: true,
@@ -264,6 +268,7 @@ export const getMe = async (req, res) => {
         createdAt: true,
         updatedAt: true,
         department: true,
+        specializations: true,
       },
     });
 

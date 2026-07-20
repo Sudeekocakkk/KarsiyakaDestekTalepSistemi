@@ -26,6 +26,7 @@ import CreateTicketPage from "./pages/personnel/CreateTicketPage";
 
 import TicketDetailPage from "./pages/shared/TicketDetailPage";
 import ProfilePage from "./pages/shared/ProfilePage";
+import UpdateProfilePage from "./pages/shared/UpdateProfilePage";
 import ChangePasswordPage from "./pages/shared/ChangePasswordPage";
 
 import NotFoundPage from "./pages/NotFoundPage";
@@ -70,6 +71,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
           <Route path="/profil" element={<ProfilePage />} />
+          <Route path="/profil-duzenle" element={<UpdateProfilePage />} />
           <Route path="/sifre-degistir" element={<ChangePasswordPage />} />
         </Route>
       </Route>

@@ -1,13 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, Send } from "lucide-react";
-import {
-  addMessage,
-  addSolution,
-  assignTicket,
-  getTicketById,
-  updateTicketStatus,
-} from "../../api/ticket.api";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { getTicketById, updateTicket } from "../../api/ticket.api";
 import { getUsers } from "../../api/user.api";
 import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
@@ -16,14 +10,22 @@ import StatusBadge from "../../components/common/StatusBadge";
 import PriorityBadge from "../../components/common/PriorityBadge";
 import Button from "../../components/common/Button";
 import { inputClass } from "../../components/common/FormField";
+import PhotoThumbnailGallery from "../../components/common/PhotoThumbnailGallery";
 import { useAuth } from "../../context/useAuth";
-import { formatDateTime, resolveFileUrl } from "../../utils/formatters";
+import { formatDateTime } from "../../utils/formatters";
 import {
   ROLES,
   TICKET_LOG_TYPE_LABELS,
   TICKET_STATUS_LABELS,
   TICKET_STATUS_OPTIONS,
 } from "../../utils/constants";
+
+const emptyForm = {
+  assignedToId: "",
+  status: "",
+  resolutionDescription: "",
+  message: "",
+};
 
 const TicketDetailPage = () => {
   const { id } = useParams();
@@ -35,18 +37,18 @@ const TicketDetailPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [statusValue, setStatusValue] = useState("");
-  const [assigneeValue, setAssigneeValue] = useState("");
-  const [solutionValue, setSolutionValue] = useState("");
-  const [messageValue, setMessageValue] = useState("");
-
-  const [savingStatus, setSavingStatus] = useState(false);
-  const [savingAssignee, setSavingAssignee] = useState(false);
-  const [savingSolution, setSavingSolution] = useState(false);
-  const [sendingMessage, setSendingMessage] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [initialForm, setInitialForm] = useState(emptyForm);
 
   const isAdmin = user?.role === ROLES.ADMIN;
+  const isAssignedTechnician =
+    user?.role === ROLES.TEKNIK_PERSONEL && ticket?.assignedToId === user?.id;
+
+  const canAssign = isAdmin;
+  const canEditStatus = isAdmin || isAssignedTechnician;
+  const canEditSolution = isAdmin || isAssignedTechnician;
 
   const loadTicket = useCallback(async () => {
     setIsLoading(true);
@@ -54,9 +56,16 @@ const TicketDetailPage = () => {
     try {
       const data = await getTicketById(id);
       setTicket(data.ticket);
-      setStatusValue(data.ticket.status);
-      setAssigneeValue(data.ticket.assignedToId ? String(data.ticket.assignedToId) : "");
-      setSolutionValue(data.ticket.resolutionDescription || "");
+
+      const snapshot = {
+        assignedToId: data.ticket.assignedToId ? String(data.ticket.assignedToId) : "",
+        status: data.ticket.status,
+        resolutionDescription: data.ticket.resolutionDescription || "",
+        message: "",
+      };
+
+      setForm(snapshot);
+      setInitialForm(snapshot);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -75,69 +84,57 @@ const TicketDetailPage = () => {
       .catch(() => {});
   }, [isAdmin]);
 
-  const handleStatusSave = async () => {
-    setSavingStatus(true);
+  const handleFieldChange = (field) => (event) => {
+    const { value } = event.target;
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const hasChanges = useMemo(() => {
+    return (
+      (canAssign && form.assignedToId !== initialForm.assignedToId) ||
+      (canEditStatus && form.status !== initialForm.status) ||
+      (canEditSolution && form.resolutionDescription.trim() !== initialForm.resolutionDescription) ||
+      form.message.trim() !== ""
+    );
+  }, [form, initialForm, canAssign, canEditStatus, canEditSolution]);
+
+  const handleSave = async () => {
+    if (isSaving || !hasChanges) return;
+
+    const payload = {};
+
+    if (canAssign && form.assignedToId && form.assignedToId !== initialForm.assignedToId) {
+      payload.assignedToId = Number(form.assignedToId);
+    }
+
+    if (canEditStatus && form.status !== initialForm.status) {
+      payload.status = form.status;
+    }
+
+    if (
+      canEditSolution &&
+      form.resolutionDescription.trim() !== initialForm.resolutionDescription
+    ) {
+      payload.resolutionDescription = form.resolutionDescription.trim();
+    }
+
+    if (form.message.trim()) {
+      payload.message = form.message.trim();
+    }
+
+    if (Object.keys(payload).length === 0) return;
+
+    setIsSaving(true);
     setError("");
     setSuccess("");
     try {
-      await updateTicketStatus(id, statusValue);
-      setSuccess("Talep durumu güncellendi.");
+      await updateTicket(id, payload);
+      setSuccess("Talep güncellendi.");
       await loadTicket();
     } catch (err) {
       setError(err.message);
     } finally {
-      setSavingStatus(false);
-    }
-  };
-
-  const handleAssigneeSave = async () => {
-    if (!assigneeValue) return;
-    setSavingAssignee(true);
-    setError("");
-    setSuccess("");
-    try {
-      await assignTicket(id, Number(assigneeValue));
-      setSuccess("Talep personele atandı.");
-      await loadTicket();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingAssignee(false);
-    }
-  };
-
-  const handleSolutionSave = async () => {
-    if (!solutionValue.trim()) {
-      setError("Çözüm açıklaması zorunludur.");
-      return;
-    }
-    setSavingSolution(true);
-    setError("");
-    setSuccess("");
-    try {
-      await addSolution(id, solutionValue.trim());
-      setSuccess("Çözüm açıklaması kaydedildi.");
-      await loadTicket();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingSolution(false);
-    }
-  };
-
-  const handleMessageSend = async (event) => {
-    event.preventDefault();
-    if (!messageValue.trim()) return;
-    setSendingMessage(true);
-    setError("");
-    try {
-      await addMessage(id, messageValue.trim());
-      setMessageValue("");
-      await loadTicket();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSendingMessage(false);
+      setIsSaving(false);
     }
   };
 
@@ -200,20 +197,7 @@ const TicketDetailPage = () => {
         {ticket.attachments?.length > 0 && (
           <div className="mt-4">
             <p className="mb-2 text-xs font-medium text-slate-400">Fotoğraflar</p>
-            <div className="flex flex-wrap gap-3">
-              {ticket.attachments.map((attachment) => (
-                <a
-                  key={attachment.id}
-                  href={resolveFileUrl(attachment.fileUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                  {attachment.originalName}
-                </a>
-              ))}
-            </div>
+            <PhotoThumbnailGallery attachments={ticket.attachments} />
           </div>
         )}
 
@@ -227,67 +211,90 @@ const TicketDetailPage = () => {
         )}
       </div>
 
-      {isAdmin && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-xl2 bg-white p-5 shadow-card">
-            <p className="mb-2 text-sm font-semibold text-slate-700">Personele Ata</p>
-            <select
-              className={inputClass}
-              value={assigneeValue}
-              onChange={(event) => setAssigneeValue(event.target.value)}
-            >
-              <option value="">Teknik personel seçin</option>
-              {technicians.map((tech) => (
-                <option key={tech.id} value={tech.id}>
-                  {tech.name}
-                </option>
-              ))}
-            </select>
-            <Button className="mt-3 w-full" onClick={handleAssigneeSave} isLoading={savingAssignee}>
-              Ata
-            </Button>
-          </div>
+      <div className="rounded-xl2 bg-white p-5 shadow-card">
+        <p className="mb-4 text-sm font-semibold text-slate-700">Talebi Güncelle</p>
 
-          <div className="rounded-xl2 bg-white p-5 shadow-card">
-            <p className="mb-2 text-sm font-semibold text-slate-700">Durum Güncelle</p>
-            <select
-              className={inputClass}
-              value={statusValue}
-              onChange={(event) => setStatusValue(event.target.value)}
-            >
-              {TICKET_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {TICKET_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-            <Button className="mt-3 w-full" onClick={handleStatusSave} isLoading={savingStatus}>
-              Güncelle
-            </Button>
-          </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {canAssign && (
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-400">Personele Ata</p>
+              <select
+                className={inputClass}
+                value={form.assignedToId}
+                onChange={handleFieldChange("assignedToId")}
+                disabled={isSaving}
+              >
+                <option value="">Teknik personel seçin</option>
+                {technicians.map((tech) => (
+                  <option key={tech.id} value={tech.id}>
+                    {tech.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          <div className="rounded-xl2 bg-white p-5 shadow-card">
-            <p className="mb-2 text-sm font-semibold text-slate-700">Çözüm Açıklaması</p>
+          {canEditStatus && (
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-400">Durum</p>
+              <select
+                className={inputClass}
+                value={form.status}
+                onChange={handleFieldChange("status")}
+                disabled={isSaving}
+              >
+                {TICKET_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {TICKET_STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {canEditSolution && (
+            <div className="lg:col-span-2">
+              <p className="mb-2 text-xs font-medium text-slate-400">Çözüm Açıklaması</p>
+              <textarea
+                rows={3}
+                className={inputClass}
+                value={form.resolutionDescription}
+                onChange={handleFieldChange("resolutionDescription")}
+                placeholder="Çözüm açıklaması girin..."
+                disabled={isSaving}
+              />
+            </div>
+          )}
+
+          <div className="lg:col-span-2">
+            <p className="mb-2 text-xs font-medium text-slate-400">Açıklama / Not Ekle</p>
             <textarea
-              rows={3}
+              rows={2}
               className={inputClass}
-              value={solutionValue}
-              onChange={(event) => setSolutionValue(event.target.value)}
-              placeholder="Çözüm açıklaması girin..."
+              value={form.message}
+              onChange={handleFieldChange("message")}
+              placeholder="Talebe açıklama veya not ekleyin..."
+              disabled={isSaving}
             />
-            <Button className="mt-3 w-full" onClick={handleSolutionSave} isLoading={savingSolution}>
-              Kaydet
-            </Button>
           </div>
         </div>
-      )}
 
-      {!isAdmin && user?.role === ROLES.TEKNIK_PERSONEL && (
-        <div className="rounded-xl2 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Durum güncelleme ve çözüm girme işlemleri şu anda backend tarafında yalnızca
-          yöneticilere açık. Bu talebe yalnızca açıklama/mesaj ekleyebilirsiniz.
-        </div>
-      )}
+        {hasChanges && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            Kaydedilmemiş değişiklikleriniz var.
+          </div>
+        )}
+
+        <Button
+          className="mt-4 w-full sm:w-auto"
+          onClick={handleSave}
+          isLoading={isSaving}
+          disabled={!hasChanges}
+        >
+          Kaydet
+        </Button>
+      </div>
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">
         <p className="mb-3 text-sm font-semibold text-slate-700">İşlem Geçmişi</p>
@@ -309,18 +316,6 @@ const TicketDetailPage = () => {
         ) : (
           <p className="text-sm text-slate-400">Henüz kayıt yok.</p>
         )}
-
-        <form onSubmit={handleMessageSend} className="mt-4 flex gap-2">
-          <input
-            className={inputClass}
-            placeholder="Açıklama / mesaj ekle..."
-            value={messageValue}
-            onChange={(event) => setMessageValue(event.target.value)}
-          />
-          <Button type="submit" isLoading={sendingMessage}>
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
       </div>
     </div>
   );

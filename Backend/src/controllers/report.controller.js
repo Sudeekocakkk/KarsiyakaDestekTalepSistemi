@@ -7,6 +7,7 @@ export const getTicketSummary = async (req, res) => {
       newTickets,
       assignedTickets,
       inProgressTickets,
+      waitingTickets,
       solvedTickets,
       cancelledTickets,
       urgentTickets,
@@ -28,6 +29,12 @@ export const getTicketSummary = async (req, res) => {
       prisma.ticket.count({
         where: {
           status: "ISLEMDE",
+        },
+      }),
+
+      prisma.ticket.count({
+        where: {
+          status: "BEKLEMEDE",
         },
       }),
 
@@ -56,6 +63,7 @@ export const getTicketSummary = async (req, res) => {
         newTickets,
         assignedTickets,
         inProgressTickets,
+        waitingTickets,
         solvedTickets,
         cancelledTickets,
         urgentTickets,

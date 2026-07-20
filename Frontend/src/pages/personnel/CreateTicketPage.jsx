@@ -6,6 +6,7 @@ import { getCategories } from "../../api/category.api";
 import FormField, { inputClass } from "../../components/common/FormField";
 import Button from "../../components/common/Button";
 import ErrorAlert from "../../components/common/ErrorAlert";
+import Tooltip from "../../components/common/Tooltip";
 import { useAuth } from "../../context/useAuth";
 import { TICKET_PRIORITY_LABELS, TICKET_PRIORITY_OPTIONS, TICKET_PRIORITY } from "../../utils/constants";
 
@@ -176,9 +177,16 @@ const CreateTicketPage = () => {
                   className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600"
                 >
                   {file.name}
-                  <button type="button" onClick={() => removeImage(index)} className="text-slate-400 hover:text-rose-500">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  <Tooltip content="Kaldır">
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      aria-label={`${file.name} fotoğrafını kaldır`}
+                      className="text-slate-400 hover:text-rose-500"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               ))}
             </div>

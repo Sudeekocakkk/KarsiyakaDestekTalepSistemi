@@ -24,26 +24,10 @@ export const getAllTickets = (params) =>
 export const getTicketById = (id) =>
   axiosClient.get(`/tickets/${id}`).then((res) => res.data);
 
-// PATCH /api/tickets/:id/assign — ADMIN rolü.
-export const assignTicket = (id, assignedToId) =>
-  axiosClient
-    .patch(`/tickets/${id}/assign`, { assignedToId })
-    .then((res) => res.data);
-
-// PATCH /api/tickets/:id/status — yalnızca ADMIN rolü yetkili (backend kısıtı).
-export const updateTicketStatus = (id, status) =>
-  axiosClient
-    .patch(`/tickets/${id}/status`, { status })
-    .then((res) => res.data);
-
-// PATCH /api/tickets/:id/solution — yalnızca ADMIN rolü yetkili (backend kısıtı).
-export const addSolution = (id, resolutionDescription) =>
-  axiosClient
-    .patch(`/tickets/${id}/solution`, { resolutionDescription })
-    .then((res) => res.data);
-
-// POST /api/tickets/:id/messages — talebi görüntüleme yetkisi olan herkes.
-export const addMessage = (id, message) =>
-  axiosClient
-    .post(`/tickets/${id}/messages`, { message })
-    .then((res) => res.data);
+// PATCH /api/tickets/:id — talep detayındaki tek "Kaydet" butonunun karşılığı.
+// payload yalnızca değişen alanları içermelidir: assignedToId (ADMIN),
+// status (ADMIN veya kendisine atanmış TEKNIK_PERSONEL), resolutionDescription
+// (ADMIN veya kendisine atanmış TEKNIK_PERSONEL) ve message (görüntüleme
+// yetkisi olan herkes). Rol/sahiplik kontrolü backend tarafında yapılır.
+export const updateTicket = (id, payload) =>
+  axiosClient.patch(`/tickets/${id}`, payload).then((res) => res.data);

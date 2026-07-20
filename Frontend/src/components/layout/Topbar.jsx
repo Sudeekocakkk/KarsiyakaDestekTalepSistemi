@@ -39,9 +39,15 @@ const Topbar = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white">
+        <button
+          type="button"
+          onClick={() => navigate("/profil")}
+          title="Profilim"
+          aria-label="Profilime git"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-900 text-xs font-semibold text-white transition hover:bg-navy-800 focus:outline-none focus:ring-2 focus:ring-navy-700/40 focus:ring-offset-2"
+        >
           {initials || "?"}
-        </div>
+        </button>
         <button
           type="button"
           onClick={handleLogout}

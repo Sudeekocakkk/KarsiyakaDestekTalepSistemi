@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { changePassword } from "../../api/auth.api";
 import { useAuth } from "../../context/useAuth";
 import FormField, { inputClass } from "../../components/common/FormField";
@@ -24,6 +25,9 @@ const ChangePasswordPage = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPasswords, setShowPasswords] = useState(false);
+
+  const wasForcedChange = Boolean(user?.mustChangePassword);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -32,6 +36,8 @@ const ChangePasswordPage = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
+
     setError("");
     setSuccess("");
 
@@ -63,7 +69,11 @@ const ChangePasswordPage = () => {
       const updatedUser = await refreshUser();
 
       setTimeout(() => {
-        navigate(roleHomePath[updatedUser?.role] || "/", { replace: true });
+        if (wasForcedChange) {
+          navigate(roleHomePath[updatedUser?.role] || "/", { replace: true });
+        } else {
+          navigate("/profil", { replace: true });
+        }
       }, 1000);
     } catch (err) {
       setError(err.message);
@@ -72,12 +82,24 @@ const ChangePasswordPage = () => {
     }
   };
 
+  const passwordInputType = showPasswords ? "text" : "password";
+
   return (
     <div className="mx-auto max-w-md space-y-5">
+      {!wasForcedChange && (
+        <button
+          type="button"
+          onClick={() => navigate("/profil")}
+          className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+        >
+          <ArrowLeft className="h-4 w-4" /> Geri
+        </button>
+      )}
+
       <div>
         <h1 className="text-lg font-semibold text-slate-800">Şifre Değiştir</h1>
         <p className="text-sm text-slate-500">
-          {user?.mustChangePassword
+          {wasForcedChange
             ? "Devam edebilmek için önce geçici şifrenizi değiştirmeniz gerekiyor."
             : "Hesap şifrenizi güncelleyin."}
         </p>
@@ -92,10 +114,11 @@ const ChangePasswordPage = () => {
             <input
               id="currentPassword"
               name="currentPassword"
-              type="password"
+              type={passwordInputType}
               className={inputClass}
               value={form.currentPassword}
               onChange={handleChange}
+              disabled={isSubmitting}
             />
           </FormField>
 
@@ -103,10 +126,11 @@ const ChangePasswordPage = () => {
             <input
               id="newPassword"
               name="newPassword"
-              type="password"
+              type={passwordInputType}
               className={inputClass}
               value={form.newPassword}
               onChange={handleChange}
+              disabled={isSubmitting}
             />
           </FormField>
 
@@ -114,12 +138,22 @@ const ChangePasswordPage = () => {
             <input
               id="confirmPassword"
               name="confirmPassword"
-              type="password"
+              type={passwordInputType}
               className={inputClass}
               value={form.confirmPassword}
               onChange={handleChange}
+              disabled={isSubmitting}
             />
           </FormField>
+
+          <button
+            type="button"
+            onClick={() => setShowPasswords((prev) => !prev)}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {showPasswords ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {showPasswords ? "Şifreleri Gizle" : "Şifreleri Göster"}
+          </button>
 
           <Button type="submit" isLoading={isSubmitting} className="w-full">
             Şifreyi Güncelle
