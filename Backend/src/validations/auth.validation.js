@@ -9,6 +9,7 @@ export const ALLOWED_EMAIL_DOMAINS = [
   "yahoo.com",
   "yandex.com",
   "yandex.com.tr",
+  "karsiyaka.bel.tr",
 ];
 
 export const UNSUPPORTED_EMAIL_DOMAIN_MESSAGE =
