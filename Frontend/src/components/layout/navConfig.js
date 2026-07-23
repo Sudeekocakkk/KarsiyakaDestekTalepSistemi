@@ -9,6 +9,7 @@ import {
   BarChart3,
   UserCircle,
   ListChecks,
+  Bell,
 } from "lucide-react";
 import { ROLES } from "../../utils/constants";
 
@@ -22,6 +23,7 @@ export const NAV_ITEMS = {
     { to: "/admin/uzmanliklar", label: "Uzmanlık Alanları", icon: GraduationCap },
     { to: "/admin/kategoriler", label: "Kategoriler", icon: FolderKanban },
     { to: "/admin/raporlar", label: "Raporlar", icon: BarChart3 },
+    { to: "/admin/bildirimler", label: "Bildirimler", icon: Bell },
     { to: "/profil", label: "Profil", icon: UserCircle },
   ],
   [ROLES.TEKNIK_PERSONEL]: [

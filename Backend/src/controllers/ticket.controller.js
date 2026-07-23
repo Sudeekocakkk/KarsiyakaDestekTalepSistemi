@@ -1,23 +1,40 @@
 import prisma from "../config/prisma.js";
-import { sendMail } from "../utils/mailer.js";
+import { addTicketAssignedEmailJob } from "../queues/mail.queue.js";
+import { recordDevice } from "../services/device.service.js";
+import { findTechnicianWithLeastLoad } from "../services/ticketAssignment.service.js";
+import {
+  notifyRole,
+  notifySpecializationTechnicians,
+  notifyUser,
+} from "../services/notification.service.js";
 
-const sendAssignmentEmail = async (technician, ticket) => {
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
+// Talep bir teknik personele atandığında (manuel admin ataması veya
+// otomatik atama) çağrılır. Mail'i doğrudan burada GÖNDERMEZ — Redis/BullMQ
+// tabanlı "ticket-email" kuyruğuna bir iş ekler; gerçek gönderim
+// Backend/src/workers/mail.worker.js tarafından ayrı bir process'te yapılır.
+// addTicketAssignedEmailJob kendi içinde hataları loglar ve asla fırlatmaz,
+// bu yüzden burada ekstra try/catch'e gerek yoktur — talep atama işlemi
+// kuyruk/Redis sorunlarından etkilenmez.
+export const enqueueAssignmentEmail = async (technician, ticket) => {
   if (!technician?.email) {
     console.error(
-      `[ticket-assign-mail] Teknik personelin (id: ${technician?.id}) e-posta adresi boş; mail gönderilemiyor.`
+      `[ticket-assign-mail] Teknik personelin (id: ${technician?.id}) e-posta adresi boş; mail kuyruğa eklenemiyor.`
     );
     return;
   }
 
-  await sendMail({
-    to: technician.email,
-    subject: `Yeni Talep Atandı: ${ticket.ticketNumber}`,
-    text:
-      `Merhaba ${technician.name},\n\n` +
-      `"${ticket.title}" başlıklı (${ticket.ticketNumber}) destek talebi size atandı.\n\n` +
-      `Öncelik: ${ticket.priority}\n` +
-      `Açıklama: ${ticket.description}\n\n` +
-      "Karşıyaka Destek",
+  await addTicketAssignedEmailJob({
+    ticketId: ticket.id,
+    assignedToId: technician.id,
+    toEmail: technician.email,
+    technicianName: technician.name,
+    ticketNumber: ticket.ticketNumber,
+    title: ticket.title,
+    priority: ticket.priority,
+    categoryName: ticket.category?.name,
+    ticketUrl: `${FRONTEND_URL}/teknik/talepler/${ticket.id}`,
   });
 };
 
@@ -30,7 +47,60 @@ const VALID_TICKET_STATUSES = [
   "IPTAL_EDILDI",
 ];
 
-const ticketInclude = {
+// Frontend/src/utils/constants.js'teki TICKET_STATUS_LABELS/TICKET_PRIORITY_LABELS
+// ile birebir aynı Türkçe etiketler. Arama teriminin durum/öncelik ETİKETİYLE
+// (örn. "çözüldü") eşleşip eşleşmediğini bulup ilgili enum değer(ler)ini
+// where.OR'a eklemek için kullanılır — ham enum koduna (COZULDU) göre arama
+// kullanıcı için anlamsız olurdu.
+const TICKET_STATUS_LABELS = {
+  YENI: "Yeni",
+  ATANDI: "Atandı",
+  ISLEMDE: "İşlemde",
+  BEKLEMEDE: "Beklemede",
+  COZULDU: "Çözüldü",
+  IPTAL_EDILDI: "İptal Edildi",
+};
+
+const TICKET_PRIORITY_LABELS = {
+  DUSUK: "Düşük",
+  NORMAL: "Normal",
+  YUKSEK: "Yüksek",
+  ACIL: "Acil",
+};
+
+const normalizeForMatch = (value) => value.toString().toLocaleLowerCase("tr-TR");
+
+// getAllTickets/getMyTickets/getAssignedTickets tarafından paylaşılır (kod
+// tekrarından kaçınmak için): talep no, başlık, açıklama, durum, öncelik,
+// kategori, müdürlük, atanan personel ve oluşturan kullanıcı adında arar.
+// Çağıran fonksiyon bunu kendi rol bazlı `where` nesnesine (örn.
+// createdById/assignedToId) EKLER; bu yüzden arama sonucu her zaman o
+// rolün zaten görebildiği talep kümesiyle sınırlı kalır.
+const buildTicketSearchOr = (term) => {
+  const normalizedTerm = normalizeForMatch(term);
+
+  const matchingStatuses = Object.entries(TICKET_STATUS_LABELS)
+    .filter(([, label]) => normalizeForMatch(label).includes(normalizedTerm))
+    .map(([value]) => value);
+
+  const matchingPriorities = Object.entries(TICKET_PRIORITY_LABELS)
+    .filter(([, label]) => normalizeForMatch(label).includes(normalizedTerm))
+    .map(([value]) => value);
+
+  return [
+    { ticketNumber: { contains: term, mode: "insensitive" } },
+    { title: { contains: term, mode: "insensitive" } },
+    { description: { contains: term, mode: "insensitive" } },
+    { category: { name: { contains: term, mode: "insensitive" } } },
+    { department: { name: { contains: term, mode: "insensitive" } } },
+    { assignedTo: { name: { contains: term, mode: "insensitive" } } },
+    { createdBy: { name: { contains: term, mode: "insensitive" } } },
+    ...(matchingStatuses.length ? [{ status: { in: matchingStatuses } }] : []),
+    ...(matchingPriorities.length ? [{ priority: { in: matchingPriorities } }] : []),
+  ];
+};
+
+export const ticketInclude = {
   category: true,
   attachments: true,
   department: true,
@@ -51,6 +121,13 @@ const ticketInclude = {
       role: true,
     },
   },
+  device: {
+    select: {
+      id: true,
+      ipAddress: true,
+      hostname: true,
+    },
+  },
   logs: {
     include: {
       user: {
@@ -60,11 +137,46 @@ const ticketInclude = {
           role: true,
         },
       },
+      device: {
+        select: {
+          id: true,
+          ipAddress: true,
+          hostname: true,
+        },
+      },
     },
     orderBy: {
       createdAt: "asc",
     },
   },
+  transfers: {
+    include: {
+      fromUser: { select: { id: true, name: true } },
+      toSpecialization: { select: { id: true, name: true } },
+      toUser: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  },
+  handoverRequests: {
+    include: {
+      requestedBy: { select: { id: true, name: true } },
+      requestedTo: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  },
+};
+
+// Cihaz/IP bilgisi kuralı gereği yalnızca ADMIN ve atanmış TEKNIK_PERSONEL
+// tarafından görülebilir; PERSONEL için hem talebin hem de her log
+// satırının device alanı yanıttan çıkarılır.
+export const stripDeviceInfoForPersonel = (ticket, user) => {
+  if (!ticket || user?.role !== "PERSONEL") return ticket;
+
+  return {
+    ...ticket,
+    device: null,
+    logs: ticket.logs?.map((log) => ({ ...log, device: null })),
+  };
 };
 
 const parseId = (value) => {
@@ -77,48 +189,6 @@ const generateTicketNumber = async () => {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   return `KD-${date}-${String(count + 1).padStart(4, "0")}`;
-};
-
-const findTechnicianWithLeastLoad = async (specializationId) => {
-  const technicians = await prisma.user.findMany({
-    where: {
-      role: "TEKNIK_PERSONEL",
-      isActive: true,
-      specializations: {
-        some: {
-          id: specializationId,
-          isActive: true,
-        },
-      },
-    },
-    select: {
-      id: true,
-      _count: {
-        select: {
-          assignedTickets: {
-            where: {
-              status: {
-                notIn: ["COZULDU", "IPTAL_EDILDI"],
-              },
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-
-  if (technicians.length === 0) {
-    return null;
-  }
-
-  technicians.sort(
-    (a, b) => a._count.assignedTickets - b._count.assignedTickets
-  );
-
-  return technicians[0].id;
 };
 
 const canViewTicket = (ticket, user) => {
@@ -205,6 +275,10 @@ export const createTicket = async (req, res) => {
       category.specializationId
     );
 
+    // Best-effort cihaz kaydı: recordDevice hiçbir zaman fırlatmaz,
+    // device null dönerse ticket/log'lar deviceId=null ile oluşturulur.
+    const device = await recordDevice(req);
+
     const logs = [
       {
         type: "TALEP_OLUSTURULDU",
@@ -251,6 +325,7 @@ export const createTicket = async (req, res) => {
         createdById: req.user.id,
         departmentId: req.user.departmentId,
         assignedToId,
+        deviceId: device?.id ?? null,
         status: assignedToId ? "ATANDI" : "YENI",
       },
     });
@@ -270,7 +345,7 @@ export const createTicket = async (req, res) => {
 
     for (const log of logs) {
       await prisma.ticketLog.create({
-        data: { ...log, ticketId: created.id },
+        data: { ...log, ticketId: created.id, deviceId: device?.id ?? null },
       });
     }
 
@@ -282,14 +357,50 @@ export const createTicket = async (req, res) => {
     // Otomatik atama akışı: ticket.assignedTo, ticketInclude sayesinde
     // {id, name, email, role} olarak zaten geliyor, ek sorguya gerek yok.
     if (assignedToId && ticket.assignedTo) {
-      await sendAssignmentEmail(ticket.assignedTo, ticket);
+      await enqueueAssignmentEmail(ticket.assignedTo, ticket);
+    }
+
+    // Bildirimler: uzmanlıktaki diğer teknik personellere ve tüm adminlere
+    // "yeni talep bu uzmanlık alanına düştü" bilgisi; otomatik atanan
+    // kişiye ayrıca kendine özel bir atama bildirimi gider (bu yüzden genel
+    // bildirimden hariç tutulur — aynı kişiye iki farklı bildirim yerine
+    // her biri tek, anlamlı bir bildirim alır).
+    const specializationName = category.specialization?.name || "İlgili";
+    const newTicketMessage = `${ticket.ticketNumber} numaralı ${TICKET_PRIORITY_LABELS[ticket.priority]} öncelikli talep ${specializationName} uzmanlık alanına düştü.`;
+
+    await notifySpecializationTechnicians(
+      category.specializationId,
+      {
+        ticketId: ticket.id,
+        title: "Yeni Talep Oluşturuldu",
+        message: newTicketMessage,
+        type: "YENI_TALEP",
+      },
+      assignedToId
+    );
+
+    await notifyRole("ADMIN", {
+      ticketId: ticket.id,
+      title: "Yeni Talep Oluşturuldu",
+      message: newTicketMessage,
+      type: "YENI_TALEP",
+    });
+
+    if (assignedToId) {
+      await notifyUser({
+        userId: assignedToId,
+        ticketId: ticket.id,
+        title: "Yeni Talep Atandı",
+        message: `${ticket.ticketNumber} numaralı talep size otomatik olarak atandı.`,
+        type: "TALEP_ATANDI",
+      });
     }
 
     return res.status(201).json({
       message: assignedToId
         ? "Destek talebi oluşturuldu ve otomatik atandı."
         : "Destek talebi oluşturuldu.",
-      ticket,
+      ticket: stripDeviceInfoForPersonel(ticket, req.user),
     });
   } catch (error) {
     console.error("createTicket error:", error);
@@ -302,7 +413,7 @@ export const createTicket = async (req, res) => {
 
 export const getMyTickets = async (req, res) => {
   try {
-    const { status, priority, categoryId } = req.query;
+    const { status, priority, categoryId, search } = req.query;
 
     const where = {
       createdById: req.user.id,
@@ -330,6 +441,10 @@ export const getMyTickets = async (req, res) => {
       }
 
       where.categoryId = parsedCategoryId;
+    }
+
+    if (search?.trim()) {
+      where.OR = buildTicketSearchOr(search.trim());
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -365,7 +480,7 @@ export const getMyTickets = async (req, res) => {
 
 export const getAssignedTickets = async (req, res) => {
   try {
-    const { status, priority, categoryId } = req.query;
+    const { status, priority, categoryId, search } = req.query;
 
     const where = {
       assignedToId: req.user.id,
@@ -393,6 +508,10 @@ export const getAssignedTickets = async (req, res) => {
       }
 
       where.categoryId = parsedCategoryId;
+    }
+
+    if (search?.trim()) {
+      where.OR = buildTicketSearchOr(search.trim());
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -432,6 +551,7 @@ export const getAllTickets = async (req, res) => {
       status,
       priority,
       categoryId,
+      departmentId,
       assignedToId,
       assignedUserId,
       createdById,
@@ -458,6 +578,16 @@ export const getAllTickets = async (req, res) => {
       where.categoryId = parsedCategoryId;
     }
 
+    // "En Yoğun Müdürlükler" kartındaki bir satıra tıklanınca dashboard'dan
+    // ?departmentId=... ile buraya yönlendirilir (yalnızca ADMIN erişebilir).
+    if (departmentId) {
+      const parsedDepartmentId = parseId(departmentId);
+      if (!parsedDepartmentId) {
+        return res.status(400).json({ message: "Geçersiz müdürlük kimliği." });
+      }
+      where.departmentId = parsedDepartmentId;
+    }
+
     const assigneeFilter = assignedToId || assignedUserId;
 
     if (assigneeFilter) {
@@ -479,20 +609,7 @@ export const getAllTickets = async (req, res) => {
     }
 
     if (search?.trim()) {
-      where.OR = [
-        {
-          title: {
-            contains: search.trim(),
-            mode: "insensitive",
-          },
-        },
-        {
-          description: {
-            contains: search.trim(),
-            mode: "insensitive",
-          },
-        },
-      ];
+      where.OR = buildTicketSearchOr(search.trim());
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -557,14 +674,32 @@ export const getTicketById = async (req, res) => {
       });
     }
 
-    if (!canViewTicket(ticket, req.user)) {
+    let canView = canViewTicket(ticket, req.user);
+
+    // Henüz talebe atanmamış olsa bile, kendisine bekleyen bir devir
+    // isteği gönderilmiş TEKNIK_PERSONEL, bildirim üzerinden geldiği
+    // talep detayını görüntüleyebilmelidir (yalnızca görüntüleme — alan
+    // bazlı düzenleme yetkileri updateTicket'ta değişmeden kalır).
+    if (!canView && req.user.role === "TEKNIK_PERSONEL") {
+      const hasPendingHandover = await prisma.handoverRequest.findFirst({
+        where: {
+          ticketId: ticket.id,
+          requestedToId: req.user.id,
+          status: "PENDING",
+        },
+      });
+
+      canView = Boolean(hasPendingHandover);
+    }
+
+    if (!canView) {
       return res.status(403).json({
         message: "Bu talebi görüntüleme yetkiniz yok.",
       });
     }
 
     return res.status(200).json({
-      ticket,
+      ticket: stripDeviceInfoForPersonel(ticket, req.user),
     });
   } catch (error) {
     console.error("getTicketById error:", error);
@@ -617,6 +752,7 @@ export const updateTicket = async (req, res) => {
     const data = {};
     const logs = [];
     let technicianToNotify = null;
+    let statusChanged = false;
 
     // Personele atama — yalnızca ADMIN.
     if (assignedToId !== undefined && assignedToId !== null && assignedToId !== "") {
@@ -685,6 +821,7 @@ export const updateTicket = async (req, res) => {
         data.status = status;
         data.resolvedAt = status === "COZULDU" ? new Date() : ticket.resolvedAt;
         data.closedAt = status === "IPTAL_EDILDI" ? new Date() : ticket.closedAt;
+        statusChanged = true;
 
         logs.push({
           type: "DURUM_DEGISTIRILDI",
@@ -752,9 +889,11 @@ export const updateTicket = async (req, res) => {
       });
     }
 
+    const device = logs.length > 0 ? await recordDevice(req) : null;
+
     for (const log of logs) {
       await prisma.ticketLog.create({
-        data: { ...log, ticketId },
+        data: { ...log, ticketId, deviceId: device?.id ?? null },
       });
     }
 
@@ -765,12 +904,30 @@ export const updateTicket = async (req, res) => {
 
     // Manuel atama akışı (admin, "Personele Ata" alanı üzerinden).
     if (technicianToNotify) {
-      await sendAssignmentEmail(technicianToNotify, updatedTicket);
+      await enqueueAssignmentEmail(technicianToNotify, updatedTicket);
+
+      await notifyUser({
+        userId: technicianToNotify.id,
+        ticketId: updatedTicket.id,
+        title: "Yeni Talep Atandı",
+        message: `${updatedTicket.ticketNumber} numaralı talep size atandı.`,
+        type: "TALEP_ATANDI",
+      });
+    }
+
+    if (statusChanged) {
+      await notifyUser({
+        userId: updatedTicket.createdById,
+        ticketId: updatedTicket.id,
+        title: "Talep Durumu Güncellendi",
+        message: `${updatedTicket.ticketNumber} numaralı talebiniz "${TICKET_STATUS_LABELS[updatedTicket.status]}" durumuna güncellendi.`,
+        type: "TALEP_DURUM_DEGISTI",
+      });
     }
 
     return res.status(200).json({
       message: "Talep güncellendi.",
-      ticket: updatedTicket,
+      ticket: stripDeviceInfoForPersonel(updatedTicket, req.user),
     });
   } catch (error) {
     console.error("updateTicket error:", error);

@@ -10,15 +10,10 @@ import {
   UserPlus2,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { getTicketSummaryReport, getCategoryReport } from "../../api/report.api";
+  getTicketSummaryReport,
+  getDashboardChartsReport,
+  getTopDepartmentsReport,
+} from "../../api/report.api";
 import { getAllTickets } from "../../api/ticket.api";
 import StatCard from "../../components/common/StatCard";
 import StatusBadge from "../../components/common/StatusBadge";
@@ -27,12 +22,18 @@ import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
 import EmptyState from "../../components/common/EmptyState";
 import TicketStatusPieChart from "../../components/common/TicketStatusPieChart";
+import MonthlyTicketTrendChart from "../../components/common/MonthlyTicketTrendChart";
+import CategoryDistributionChart from "../../components/common/CategoryDistributionChart";
+import DashboardSearch from "../../components/common/DashboardSearch";
+import TopDepartmentsCard from "../../components/common/TopDepartmentsCard";
 import { formatDateTime } from "../../utils/formatters";
 
 const AdminDashboardPage = () => {
   const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
-  const [categoryReport, setCategoryReport] = useState([]);
+  const [monthly, setMonthly] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [topDepartments, setTopDepartments] = useState([]);
   const [recentTickets, setRecentTickets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,19 +54,30 @@ const AdminDashboardPage = () => {
     navigate(`/admin/talepler?status=${status}`);
   };
 
+  const handleCategorySliceClick = (categoryId) => {
+    navigate(`/admin/talepler?categoryId=${categoryId}`);
+  };
+
+  const handleDepartmentRowClick = (departmentId) => {
+    navigate(`/admin/talepler?departmentId=${departmentId}`);
+  };
+
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       setError("");
       try {
-        const [summaryData, categoryData, ticketsData] = await Promise.all([
+        const [summaryData, chartsData, ticketsData, topDepartmentsData] = await Promise.all([
           getTicketSummaryReport(),
-          getCategoryReport(),
+          getDashboardChartsReport(),
           getAllTickets(),
+          getTopDepartmentsReport(),
         ]);
         setSummary(summaryData.summary);
-        setCategoryReport(categoryData.report);
+        setMonthly(chartsData.monthly);
+        setCategories(chartsData.categories);
         setRecentTickets(ticketsData.tickets.slice(0, 6));
+        setTopDepartments(topDepartmentsData.topDepartments);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -79,6 +91,8 @@ const AdminDashboardPage = () => {
 
   return (
     <div className="space-y-6">
+      <DashboardSearch resultPath="/admin/talepler" />
+
       <ErrorAlert message={error} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -96,34 +110,34 @@ const AdminDashboardPage = () => {
         <TicketStatusPieChart statusCounts={statusCounts} onSliceClick={handleStatusSliceClick} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-5">
+        <div className="rounded-xl2 bg-white p-5 shadow-card lg:col-span-3">
+          <p className="mb-4 text-sm font-semibold text-slate-700">Aylık Talep Dağılımı</p>
+          <MonthlyTicketTrendChart data={monthly} />
+        </div>
+
         <div className="rounded-xl2 bg-white p-5 shadow-card lg:col-span-2">
-          <p className="mb-4 text-sm font-semibold text-slate-700">Kategoriye Göre Talep Dağılımı</p>
-          {categoryReport.length === 0 ? (
-            <EmptyState title="Kategori verisi yok" />
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={categoryReport}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="categoryName" tick={{ fontSize: 12 }} interval={0} angle={-15} textAnchor="end" height={60} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="ticketCount" fill="#1c3566" radius={[6, 6, 0, 0]} name="Talep Sayısı" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+          <p className="mb-4 text-sm font-semibold text-slate-700">Taleplerin Kategoriye Göre Dağılımı</p>
+          <CategoryDistributionChart categories={categories} onSliceClick={handleCategorySliceClick} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+        <div className="rounded-xl2 bg-white p-5 shadow-card">
+          <p className="mb-4 text-sm font-semibold text-slate-700">En Yoğun Müdürlükler</p>
+          <TopDepartmentsCard departments={topDepartments} onRowClick={handleDepartmentRowClick} />
         </div>
 
         <div className="rounded-xl2 bg-white p-5 shadow-card">
           <p className="mb-4 text-sm font-semibold text-slate-700">Hızlı Erişim</p>
-          <div className="space-y-2">
-            <Link to="/admin/talepler" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Link to="/admin/talepler" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-center text-sm text-slate-600 hover:bg-slate-50">
               Tüm Talepleri Yönet
             </Link>
-            <Link to="/admin/kullanicilar" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+            <Link to="/admin/kullanicilar" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-center text-sm text-slate-600 hover:bg-slate-50">
               Kullanıcı / Personel Ekle
             </Link>
-            <Link to="/admin/raporlar" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+            <Link to="/admin/raporlar" className="block rounded-lg border border-slate-200 px-3 py-2.5 text-center text-sm text-slate-600 hover:bg-slate-50">
               Performans Raporlarını Gör
             </Link>
           </div>

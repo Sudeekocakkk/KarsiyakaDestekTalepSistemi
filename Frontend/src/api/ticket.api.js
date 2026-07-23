@@ -31,3 +31,9 @@ export const getTicketById = (id) =>
 // yetkisi olan herkes). Rol/sahiplik kontrolü backend tarafında yapılır.
 export const updateTicket = (id, payload) =>
   axiosClient.patch(`/tickets/${id}`, payload).then((res) => res.data);
+
+// POST /api/tickets/:id/transfer — atanmış TEKNIK_PERSONEL (veya ADMIN),
+// talebi başka bir uzmanlık alanına (isteğe bağlı belirli bir kişiye) aktarır.
+// payload: { toSpecializationId, toUserId?, reason, workDescription }
+export const transferTicket = (id, payload) =>
+  axiosClient.post(`/tickets/${id}/transfer`, payload).then((res) => res.data);

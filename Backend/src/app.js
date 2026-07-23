@@ -8,6 +8,8 @@ import categoryRoutes from "./routes/category.routes.js";
 import departmentRoutes from "./routes/department.routes.js";
 import reportRoutes from "./routes/report.routes.js";
 import specializationRoutes from "./routes/specialization.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
+import handoverRoutes from "./routes/handover.routes.js";
 
 import prisma from "./config/prisma.js";
 import {
@@ -57,6 +59,8 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/specializations", specializationRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/handover-requests", handoverRoutes);
 
 app.use(
   "/uploads",

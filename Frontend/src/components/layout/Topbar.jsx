@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../context/useAuth";
 import { ROLE_LABELS } from "../../utils/constants";
+import NotificationBell from "../common/NotificationBell";
 
 const Topbar = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
@@ -39,6 +40,7 @@ const Topbar = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        <NotificationBell />
         <button
           type="button"
           onClick={() => navigate("/profil")}

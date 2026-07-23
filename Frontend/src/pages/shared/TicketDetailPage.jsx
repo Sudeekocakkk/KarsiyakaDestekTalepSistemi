@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, UserRoundPlus } from "lucide-react";
 import { getTicketById, updateTicket } from "../../api/ticket.api";
 import { getUsers } from "../../api/user.api";
 import Loader from "../../components/common/Loader";
@@ -11,6 +11,9 @@ import PriorityBadge from "../../components/common/PriorityBadge";
 import Button from "../../components/common/Button";
 import { inputClass } from "../../components/common/FormField";
 import PhotoThumbnailGallery from "../../components/common/PhotoThumbnailGallery";
+import TransferTicketModal from "../../components/tickets/TransferTicketModal";
+import HandoverRequestModal from "../../components/tickets/HandoverRequestModal";
+import HandoverResponsePanel from "../../components/tickets/HandoverResponsePanel";
 import { useAuth } from "../../context/useAuth";
 import { formatDateTime } from "../../utils/formatters";
 import {
@@ -19,6 +22,8 @@ import {
   TICKET_STATUS_LABELS,
   TICKET_STATUS_OPTIONS,
 } from "../../utils/constants";
+
+const CLOSED_STATUSES = ["COZULDU", "IPTAL_EDILDI"];
 
 const emptyForm = {
   assignedToId: "",
@@ -42,6 +47,9 @@ const TicketDetailPage = () => {
   const [form, setForm] = useState(emptyForm);
   const [initialForm, setInitialForm] = useState(emptyForm);
 
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
+
   const isAdmin = user?.role === ROLES.ADMIN;
   const isAssignedTechnician =
     user?.role === ROLES.TEKNIK_PERSONEL && ticket?.assignedToId === user?.id;
@@ -49,6 +57,12 @@ const TicketDetailPage = () => {
   const canAssign = isAdmin;
   const canEditStatus = isAdmin || isAssignedTechnician;
   const canEditSolution = isAdmin || isAssignedTechnician;
+
+  const isClosed = ticket ? CLOSED_STATUSES.includes(ticket.status) : false;
+  const pendingHandoverRequest = ticket?.handoverRequests?.find(
+    (request) => request.status === "PENDING"
+  );
+  const canTransferOrHandover = isAssignedTechnician && !isClosed && !pendingHandoverRequest;
 
   const loadTicket = useCallback(async () => {
     setIsLoading(true);
@@ -178,6 +192,17 @@ const TicketDetailPage = () => {
           </div>
         </div>
 
+        {canTransferOrHandover && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setIsTransferModalOpen(true)}>
+              <ArrowRightLeft className="h-4 w-4" /> Uzmanlığa Aktar
+            </Button>
+            <Button variant="outline" onClick={() => setIsHandoverModalOpen(true)}>
+              <UserRoundPlus className="h-4 w-4" /> İşi Devret
+            </Button>
+          </div>
+        )}
+
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <InfoRow label="Kategori" value={ticket.category?.name} />
           <InfoRow label="Müdürlük" value={ticket.department?.name} />
@@ -185,6 +210,12 @@ const TicketDetailPage = () => {
           <InfoRow label="Oluşturan" value={ticket.createdBy?.name} />
           <InfoRow label="Atanan Personel" value={ticket.assignedTo?.name || "Henüz atanmadı"} />
           <InfoRow label="Oluşturma Tarihi" value={formatDateTime(ticket.createdAt)} />
+          {ticket.device && (
+            <InfoRow
+              label="Talebin Açıldığı Cihaz"
+              value={`${ticket.device.ipAddress} · ${ticket.device.hostname}`}
+            />
+          )}
         </div>
 
         <div className="mt-4">
@@ -210,6 +241,14 @@ const TicketDetailPage = () => {
           </div>
         )}
       </div>
+
+      {pendingHandoverRequest && (
+        <HandoverResponsePanel
+          handoverRequest={pendingHandoverRequest}
+          currentUserId={user?.id}
+          onSuccess={loadTicket}
+        />
+      )}
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">
         <p className="mb-4 text-sm font-semibold text-slate-700">Talebi Güncelle</p>
@@ -306,10 +345,17 @@ const TicketDetailPage = () => {
                 <p className="text-sm font-medium text-slate-700">
                   {TICKET_LOG_TYPE_LABELS[log.type] || log.type}
                 </p>
-                {log.description && <p className="text-sm text-slate-600">{log.description}</p>}
+                {log.description && (
+                  <p className="whitespace-pre-wrap text-sm text-slate-600">{log.description}</p>
+                )}
                 <p className="text-xs text-slate-400">
                   {log.user?.name || "Sistem"} · {formatDateTime(log.createdAt)}
                 </p>
+                {log.device && (
+                  <p className="text-[11px] text-slate-400">
+                    IP: {log.device.ipAddress} · {log.device.hostname}
+                  </p>
+                )}
               </li>
             ))}
           </ol>
@@ -317,6 +363,19 @@ const TicketDetailPage = () => {
           <p className="text-sm text-slate-400">Henüz kayıt yok.</p>
         )}
       </div>
+
+      <TransferTicketModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        ticket={ticket}
+        onSuccess={loadTicket}
+      />
+      <HandoverRequestModal
+        isOpen={isHandoverModalOpen}
+        onClose={() => setIsHandoverModalOpen(false)}
+        ticket={ticket}
+        onSuccess={loadTicket}
+      />
     </div>
   );
 };

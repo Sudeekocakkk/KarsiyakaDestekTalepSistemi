@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ClipboardList, Clock, Wrench, CheckCircle2 } from "lucide-react";
 import { getAssignedTickets } from "../../api/ticket.api";
+import { getDashboardChartsReport } from "../../api/report.api";
 import StatCard from "../../components/common/StatCard";
 import StatusBadge from "../../components/common/StatusBadge";
 import PriorityBadge from "../../components/common/PriorityBadge";
@@ -9,6 +10,9 @@ import Loader from "../../components/common/Loader";
 import ErrorAlert from "../../components/common/ErrorAlert";
 import EmptyState from "../../components/common/EmptyState";
 import TicketStatusPieChart from "../../components/common/TicketStatusPieChart";
+import MonthlyTicketTrendChart from "../../components/common/MonthlyTicketTrendChart";
+import CategoryDistributionChart from "../../components/common/CategoryDistributionChart";
+import DashboardSearch from "../../components/common/DashboardSearch";
 import { formatDateTime } from "../../utils/formatters";
 import { TICKET_STATUS, TICKET_STATUS_OPTIONS } from "../../utils/constants";
 
@@ -17,6 +21,8 @@ import { TICKET_STATUS, TICKET_STATUS_OPTIONS } from "../../utils/constants";
 const TechnicianDashboardPage = () => {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
+  const [monthly, setMonthly] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -25,8 +31,13 @@ const TechnicianDashboardPage = () => {
       setIsLoading(true);
       setError("");
       try {
-        const data = await getAssignedTickets();
-        setTickets(data.tickets);
+        const [ticketsData, chartsData] = await Promise.all([
+          getAssignedTickets(),
+          getDashboardChartsReport(),
+        ]);
+        setTickets(ticketsData.tickets);
+        setMonthly(chartsData.monthly);
+        setCategories(chartsData.categories);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -57,6 +68,10 @@ const TechnicianDashboardPage = () => {
     navigate(`/teknik/talepler?status=${status}`);
   };
 
+  const handleCategorySliceClick = (categoryId) => {
+    navigate(`/teknik/talepler?categoryId=${categoryId}`);
+  };
+
   const recentTickets = tickets.slice(0, 5);
 
   if (isLoading) return <Loader label="Talepler yükleniyor..." />;
@@ -67,6 +82,8 @@ const TechnicianDashboardPage = () => {
         <h1 className="text-lg font-semibold text-slate-800">Teknik Personel Paneli</h1>
         <p className="text-sm text-slate-500">Size atanan destek taleplerinin özeti.</p>
       </div>
+
+      <DashboardSearch resultPath="/teknik/talepler" />
 
       <ErrorAlert message={error} />
 
@@ -80,6 +97,18 @@ const TechnicianDashboardPage = () => {
       <div className="rounded-xl2 bg-white p-5 shadow-card">
         <p className="mb-4 text-sm font-semibold text-slate-700">Duruma Göre Talep Dağılımı</p>
         <TicketStatusPieChart statusCounts={statusCounts} onSliceClick={handleStatusSliceClick} />
+      </div>
+
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-5">
+        <div className="rounded-xl2 bg-white p-5 shadow-card lg:col-span-3">
+          <p className="mb-4 text-sm font-semibold text-slate-700">Aylık Talep Dağılımı</p>
+          <MonthlyTicketTrendChart data={monthly} />
+        </div>
+
+        <div className="rounded-xl2 bg-white p-5 shadow-card lg:col-span-2">
+          <p className="mb-4 text-sm font-semibold text-slate-700">Taleplerin Kategoriye Göre Dağılımı</p>
+          <CategoryDistributionChart categories={categories} onSliceClick={handleCategorySliceClick} />
+        </div>
       </div>
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">

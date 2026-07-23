@@ -16,6 +16,7 @@ import DepartmentManagementPage from "./pages/admin/DepartmentManagementPage";
 import SpecializationManagementPage from "./pages/admin/SpecializationManagementPage";
 import CategoryManagementPage from "./pages/admin/CategoryManagementPage";
 import ReportsPage from "./pages/admin/ReportsPage";
+import AdminNotificationsPage from "./pages/admin/AdminNotificationsPage";
 
 import TechnicianDashboardPage from "./pages/technician/TechnicianDashboardPage";
 import AssignedTicketsPage from "./pages/technician/AssignedTicketsPage";
@@ -87,6 +88,7 @@ function App() {
           <Route path="/admin/uzmanliklar" element={<SpecializationManagementPage />} />
           <Route path="/admin/kategoriler" element={<CategoryManagementPage />} />
           <Route path="/admin/raporlar" element={<ReportsPage />} />
+          <Route path="/admin/bildirimler" element={<AdminNotificationsPage />} />
         </Route>
       </Route>
 

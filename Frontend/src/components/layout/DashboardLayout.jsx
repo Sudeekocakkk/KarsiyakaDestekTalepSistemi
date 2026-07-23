@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { useAuth } from "../../context/useAuth";
+import NotificationToastStack from "../common/NotificationToastStack";
 
 const DashboardLayout = () => {
   const { user } = useAuth();
@@ -10,6 +11,7 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex h-screen bg-slate-100">
+      <NotificationToastStack />
       <Sidebar role={user?.role} isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />

@@ -37,6 +37,27 @@ enum TicketLogType {
   COZUM_EKLENDI
   TALEP_KAPATILDI
   TALEP_YENIDEN_ACILDI
+  UZMANLIGA_AKTARILDI
+  DEVIR_ISTENDI
+  DEVIR_KABUL_EDILDI
+  DEVIR_REDDEDILDI
+  DEVIR_IPTAL_EDILDI
+}
+
+enum NotificationType {
+  YENI_TALEP
+  TALEP_ATANDI
+  TALEP_DEVREDILDI
+  TALEP_DURUM_DEGISTI
+  DEVIR_ISTEGI_ALINDI
+  DEVIR_ISTEGI_SONUCLANDI
+}
+
+enum HandoverStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
 }
 
 model Department {
@@ -73,6 +94,15 @@ model User {
   assignedTickets Ticket[]    @relation("AssignedTickets")
   ticketLogs      TicketLog[]
 
+  loginLogs     LoginLog[]
+  notifications Notification[]
+
+  transfersFrom TicketTransfer[] @relation("TicketTransferFrom")
+  transfersTo   TicketTransfer[] @relation("TicketTransferTo")
+
+  handoverRequestsSent     HandoverRequest[] @relation("HandoverRequestedBy")
+  handoverRequestsReceived HandoverRequest[] @relation("HandoverRequestedTo")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -89,6 +119,8 @@ model Specialization {
 
   categories Category[]
   users      User[]
+
+  ticketTransfers TicketTransfer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -137,8 +169,15 @@ model Ticket {
   categoryId Int
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
+  deviceId Int?
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
   attachments TicketAttachment[]
   logs        TicketLog[]
+
+  notifications    Notification[]
+  transfers        TicketTransfer[]
+  handoverRequests HandoverRequest[]
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -149,6 +188,7 @@ model Ticket {
   @@index([assignedToId])
   @@index([departmentId])
   @@index([categoryId])
+  @@index([deviceId])
   @@index([status])
   @@index([priority])
   @@index([createdAt])
@@ -168,10 +208,14 @@ model TicketLog {
   userId Int?
   user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  deviceId Int?
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([ticketId])
   @@index([userId])
+  @@index([deviceId])
   @@index([createdAt])
   @@map("ticket_logs")
 }
@@ -190,4 +234,123 @@ model TicketAttachment {
   createdAt DateTime @default(now())
 
   @@map("ticket_attachments")
+}
+
+// Bir IP + bilgisayar adı ("hostname") kombinasyonunun kalıcı kimliği.
+// Aynı cihaz tekrar bağlandığında yeni satır açılmaz; yalnızca lastSeenAt
+// güncellenir (upsert). hostname reverse-DNS ile çözülemezse "Bilinmiyor".
+model Device {
+  id          Int      @id @default(autoincrement())
+  ipAddress   String
+  hostname    String   @default("Bilinmiyor")
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  loginLogs  LoginLog[]
+  tickets    Ticket[]
+  ticketLogs TicketLog[]
+
+  @@unique([ipAddress, hostname])
+  @@map("devices")
+}
+
+// Her başarılı girişte bir kayıt oluşur (Device'ın kendisi upsert edilir,
+// LoginLog geçmişi korur).
+model LoginLog {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deviceId Int
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("login_logs")
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ticketId Int?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  title   String
+  message String
+  type    NotificationType
+
+  isRead Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// Bir talebin, atanmış teknik personel tarafından farklı bir uzmanlık
+// alanına (isteğe bağlı olarak belirli bir kişiye) aktarılması. Önceki
+// personelin TicketLog kayıtları silinmez; bu tablo yalnızca aktarım
+// olayının kendisini ayrıca ilişkisel olarak tutar.
+model TicketTransfer {
+  id Int @id @default(autoincrement())
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  fromUserId Int?
+  fromUser   User? @relation("TicketTransferFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+
+  toSpecializationId Int
+  toSpecialization   Specialization @relation(fields: [toSpecializationId], references: [id])
+
+  toUserId Int?
+  toUser   User? @relation("TicketTransferTo", fields: [toUserId], references: [id], onDelete: SetNull)
+
+  reason          String
+  workDescription String?
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("ticket_transfers")
+}
+
+// Bir teknik personelin, kendisine atanmış bir talebi başka bir teknik
+// personele devretmek için gönderdiği onay bekleyen istek. Aynı talep için
+// aynı anda yalnızca bir PENDING istek olabilir — bu kural, migration.sql'e
+// elle eklenen kısmi (partial) unique index ile DB seviyesinde garanti
+// edilir (bkz. migration dosyasındaki handover_requests_one_pending_per_ticket).
+model HandoverRequest {
+  id Int @id @default(autoincrement())
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  requestedById Int
+  requestedBy   User @relation("HandoverRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  requestedToId Int
+  requestedTo   User @relation("HandoverRequestedTo", fields: [requestedToId], references: [id], onDelete: Cascade)
+
+  reason       String
+  status       HandoverStatus @default(PENDING)
+  responseNote String?
+
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@index([ticketId])
+  @@index([requestedToId])
+  @@index([status])
+  @@map("handover_requests")
 }

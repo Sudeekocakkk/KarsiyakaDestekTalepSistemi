@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getAssignedTickets } from "../../api/ticket.api";
 import { getCategories } from "../../api/category.api";
@@ -10,8 +10,8 @@ import PriorityBadge from "../../components/common/PriorityBadge";
 import { inputClass } from "../../components/common/FormField";
 import ScrollableListContainer from "../../components/common/ScrollableListContainer";
 import ListSearchInput from "../../components/common/ListSearchInput";
+import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { formatDateTime } from "../../utils/formatters";
-import { buildTicketSearchFields, matchesSearch } from "../../utils/search";
 import {
   TICKET_PRIORITY_LABELS,
   TICKET_PRIORITY_OPTIONS,
@@ -25,19 +25,19 @@ const AssignedTicketsPage = () => {
   const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  // Dashboard'daki durum grafiğinden ?status=... ile gelen filtre, sayfa
-  // açılırken otomatik uygulanır (bkz. TechnicianDashboardPage).
+  // Talep no, başlık, açıklama, durum, öncelik, kategori, müdürlük ve
+  // oluşturan adında arama backend'de yapılır (bkz. ticket.controller.js
+  // buildTicketSearchOr) — yalnızca bana atanmış talepler kapsamında.
+  const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
+  const debouncedSearch = useDebouncedValue(searchTerm, 400);
+  // Dashboard'daki durum/kategori grafiklerinden ?status=... veya
+  // ?categoryId=... ile gelen filtre, sayfa açılırken otomatik uygulanır
+  // (bkz. TechnicianDashboardPage).
   const [filters, setFilters] = useState({
     status: searchParams.get("status") || "",
     priority: "",
-    categoryId: "",
+    categoryId: searchParams.get("categoryId") || "",
   });
-
-  const visibleTickets = useMemo(
-    () => tickets.filter((ticket) => matchesSearch(searchTerm, buildTicketSearchFields(ticket))),
-    [tickets, searchTerm]
-  );
 
   useEffect(() => {
     getCategories()
@@ -54,6 +54,7 @@ const AssignedTicketsPage = () => {
         if (filters.status) params.status = filters.status;
         if (filters.priority) params.priority = filters.priority;
         if (filters.categoryId) params.categoryId = filters.categoryId;
+        if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
         const data = await getAssignedTickets(params);
         setTickets(data.tickets);
       } catch (err) {
@@ -63,7 +64,7 @@ const AssignedTicketsPage = () => {
       }
     };
     load();
-  }, [filters]);
+  }, [filters, debouncedSearch]);
 
   const handleFilterChange = (event) => {
     const { name, value } = event.target;
@@ -81,7 +82,7 @@ const AssignedTicketsPage = () => {
         <ListSearchInput
           value={searchTerm}
           onChange={setSearchTerm}
-          placeholder="Talep no, başlık, durum, kategori veya oluşturan ara..."
+          placeholder="Talep no, başlık, açıklama, durum, kategori veya oluşturan ara..."
         />
         <select name="status" className={inputClass} value={filters.status} onChange={handleFilterChange}>
           <option value="">Tüm Durumlar</option>
@@ -115,11 +116,15 @@ const AssignedTicketsPage = () => {
         {isLoading ? (
           <Loader label="Talepler yükleniyor..." />
         ) : tickets.length === 0 ? (
-          <EmptyState title="Filtreye uygun talep bulunamadı" />
-        ) : visibleTickets.length === 0 ? (
-          <EmptyState title="Aramanızla eşleşen kayıt bulunamadı." />
+          <EmptyState
+            title={
+              debouncedSearch.trim()
+                ? "Aramanızla eşleşen talep bulunamadı."
+                : "Filtreye uygun talep bulunamadı"
+            }
+          />
         ) : (
-          <ScrollableListContainer rowCount={visibleTickets.length}>
+          <ScrollableListContainer rowCount={tickets.length}>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
@@ -132,7 +137,7 @@ const AssignedTicketsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {visibleTickets.map((ticket) => (
+                {tickets.map((ticket) => (
                   <tr key={ticket.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                     <td className="py-2.5 pr-4">
                       <Link to={`/teknik/talepler/${ticket.id}`} className="font-medium text-navy-700 hover:underline">

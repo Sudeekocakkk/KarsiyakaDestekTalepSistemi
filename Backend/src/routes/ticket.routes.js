@@ -7,6 +7,10 @@ import {
   getTicketById,
   updateTicket,
 } from "../controllers/ticket.controller.js";
+import { transferTicket } from "../controllers/ticketTransfer.controller.js";
+import {
+  createHandoverRequest,
+} from "../controllers/handover.controller.js";
 
 import {
   authenticate,
@@ -15,6 +19,8 @@ import {
 import { authorize } from "../middlewares/role.middleware.js";
 import { uploadTicketImages } from "../middlewares/upload.middleware.js";
 import { validateCreateTicket } from "../validations/ticket.validation.js";
+import { validateTransferTicket } from "../validations/ticketTransfer.validation.js";
+import { validateCreateHandoverRequest } from "../validations/handover.validation.js";
 
 const router = express.Router();
 
@@ -47,5 +53,19 @@ router.get("/:id", getTicketById);
 // bu yüzden burada rota seviyesinde rol kısıtı uygulanmaz (PERSONEL de kendi
 // talebine not ekleyebilmelidir).
 router.patch("/:id", updateTicket);
+
+router.post(
+  "/:id/transfer",
+  authorize("TEKNIK_PERSONEL", "ADMIN"),
+  validateTransferTicket,
+  transferTicket
+);
+
+router.post(
+  "/:id/handover-requests",
+  authorize("TEKNIK_PERSONEL"),
+  validateCreateHandoverRequest,
+  createHandoverRequest
+);
 
 export default router;

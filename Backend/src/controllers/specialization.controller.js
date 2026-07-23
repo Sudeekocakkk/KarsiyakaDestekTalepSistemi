@@ -94,6 +94,7 @@ export const getSpecializationById = async (req, res) => {
             email: true,
             role: true,
             departmentId: true,
+            isActive: true,
           },
         },
       },

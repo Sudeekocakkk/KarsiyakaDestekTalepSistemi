@@ -86,6 +86,35 @@ export const TICKET_LOG_TYPE_LABELS = {
   COZUM_EKLENDI: "Çözüm eklendi",
   TALEP_KAPATILDI: "Talep kapatıldı",
   TALEP_YENIDEN_ACILDI: "Talep yeniden açıldı",
+  UZMANLIGA_AKTARILDI: "Uzmanlığa aktarıldı",
+  DEVIR_ISTENDI: "Devir istendi",
+  DEVIR_KABUL_EDILDI: "Devir kabul edildi",
+  DEVIR_REDDEDILDI: "Devir reddedildi",
+  DEVIR_IPTAL_EDILDI: "Devir iptal edildi",
+};
+
+export const NOTIFICATION_TYPE_LABELS = {
+  YENI_TALEP: "Yeni Talep",
+  TALEP_ATANDI: "Talep Atandı",
+  TALEP_DEVREDILDI: "Talep Devredildi",
+  TALEP_DURUM_DEGISTI: "Durum Değişti",
+  DEVIR_ISTEGI_ALINDI: "Devir İsteği",
+  DEVIR_ISTEGI_SONUCLANDI: "Devir Sonuçlandı",
+};
+
+export const HANDOVER_STATUS_LABELS = {
+  PENDING: "Bekliyor",
+  ACCEPTED: "Kabul Edildi",
+  REJECTED: "Reddedildi",
+  CANCELLED: "İptal Edildi",
+};
+
+// Bildirim/toast tıklamalarında role uygun talep detay rotasını üretir
+// (App.jsx'teki gerçek rotalarla birebir uyumlu).
+export const ticketDetailPath = (role, ticketId) => {
+  if (role === ROLES.ADMIN) return `/admin/talepler/${ticketId}`;
+  if (role === ROLES.TEKNIK_PERSONEL) return `/teknik/talepler/${ticketId}`;
+  return `/personel/talepler/${ticketId}`;
 };
 
 // Talebi oluşturan/atanan personel dışında görüntüleyemez (backend canViewTicket ile birebir).

@@ -116,6 +116,50 @@ export const createUser = async (req, res) => {
   }
 };
 
+// GET /api/users/technicians — ADMIN kapısından önce tanımlanır (bkz.
+// user.routes.js), çünkü GET /api/users tamamen ADMIN'e kilitlidir ama
+// devir isteği/uzmanlığa aktarım akışlarında bir TEKNIK_PERSONEL'in diğer
+// aktif teknik personelleri görebilmesi gerekir. Yalnızca devir/aktarım
+// hedefi seçimi için gerekli minimal alanları döner.
+export const getTechnicians = async (req, res) => {
+  try {
+    const { excludeSelf } = req.query;
+
+    const where = {
+      role: "TEKNIK_PERSONEL",
+      isActive: true,
+    };
+
+    if (excludeSelf === "true") {
+      where.id = { not: req.user.id };
+    }
+
+    const technicians = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        specializations: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    return res.status(200).json({
+      count: technicians.length,
+      technicians,
+    });
+  } catch (error) {
+    console.error("getTechnicians error:", error);
+
+    return res.status(500).json({
+      message: "Teknik personel listesi alınırken bir hata oluştu.",
+    });
+  }
+};
+
 export const getUsers = async (req, res) => {
   try {
     const { role, isActive, departmentId, search } = req.query;

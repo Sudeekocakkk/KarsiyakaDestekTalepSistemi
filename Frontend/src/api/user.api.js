@@ -15,6 +15,12 @@ export const createUser = (payload) =>
 export const getUsers = (params) =>
   axiosClient.get("/users", { params }).then((res) => res.data);
 
+// GET /api/users/technicians — TEKNIK_PERSONEL veya ADMIN erişebilir
+// (devir isteği hedef personel seçimi için, GET /api/users'ın aksine
+// ADMIN'e kilitli değildir).
+export const getTechnicians = (params) =>
+  axiosClient.get("/users/technicians", { params }).then((res) => res.data);
+
 export const getUserById = (id) =>
   axiosClient.get(`/users/${id}`).then((res) => res.data);
 

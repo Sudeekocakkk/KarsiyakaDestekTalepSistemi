@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { Landmark } from "lucide-react";
 import { NAV_ITEMS } from "./navConfig";
 import { ROLE_LABELS } from "../../utils/constants";
+import logo from "../../assets/logoV2.svg";
 
 const Sidebar = ({ role, isOpen, onClose }) => {
   const items = NAV_ITEMS[role] || [];
@@ -20,9 +20,11 @@ const Sidebar = ({ role, isOpen, onClose }) => {
         }`}
       >
         <div className="flex items-center gap-3 px-5 py-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600">
-            <Landmark className="h-6 w-6 text-white" />
-          </div>
+          <img
+            src={logo}
+            alt="Karşıyaka Belediyesi logosu"
+            className="h-10 w-10 shrink-0 object-contain"
+          />
           <div className="leading-tight">
             <p className="text-sm font-bold tracking-wide text-white">KARŞIYAKA</p>
             <p className="text-xs tracking-wide text-slate-400">BELEDİYESİ</p>

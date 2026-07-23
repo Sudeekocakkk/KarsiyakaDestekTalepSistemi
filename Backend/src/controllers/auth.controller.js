@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import prisma from "../config/prisma.js";
 import { generateToken } from "../utils/generateToken.js";
+import { recordDevice } from "../services/device.service.js";
 
 // Sistemde hiç kullanıcı yoksa ilk ADMIN hesabını oluşturur
 export const setupAdmin = async (req, res) => {
@@ -223,6 +224,23 @@ export const login = async (req, res) => {
     }
 
     const token = generateToken(user.id, user.role);
+
+    // Cihaz/IP kaydı tamamen best-effort'tur: recordDevice hiçbir zaman
+    // fırlatmaz, ama yine de giriş akışını bundan tamamen izole tutuyoruz.
+    try {
+      const device = await recordDevice(req);
+
+      if (device) {
+        await prisma.loginLog.create({
+          data: {
+            userId: user.id,
+            deviceId: device.id,
+          },
+        });
+      }
+    } catch (deviceError) {
+      console.error("[login] Cihaz/giriş kaydı oluşturulamadı:", deviceError.message);
+    }
 
     return res.status(200).json({
       message: "Giriş başarılı.",
