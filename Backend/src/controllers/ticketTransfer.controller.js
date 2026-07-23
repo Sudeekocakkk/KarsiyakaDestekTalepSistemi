@@ -15,11 +15,19 @@ const parseId = (value) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-// POST /api/tickets/:id/transfer — bir talebi, atanmış teknik personelin
-// (veya ADMIN'in) başka bir uzmanlık alanına (isteğe bağlı olarak belirli
-// bir kişiye) aktarması. Önceki personelin TicketLog kayıtları asla
-// silinmez; bu uç yalnızca yeni bir TicketTransfer + TicketLog satırı
-// ekler ve Ticket.assignedToId'yi günceller.
+// POST /api/tickets/:id/transfer — "İşi Devret": atanmış teknik personelin
+// (veya ADMIN'in) talebi doğrudan (onay beklemeden) başka bir teknik
+// personele atamasıdır. Hedef uzmanlık VE hedef personel alanlarının
+// ikisi de "Fark Etmez" olabilir:
+//   - Uzmanlık verilmemiş + personel verilmemiş → tüm aktif teknik
+//     personeller arasından en az yüklü olan otomatik atanır.
+//   - Uzmanlık verilmiş + personel verilmemiş → yalnızca o uzmanlıktaki
+//     en az yüklü aktif personel otomatik atanır.
+//   - Personel verilmişse (uzmanlık verilmiş/verilmemiş fark etmeksizin)
+//     doğrudan o kişiye atanır (uzmanlık verilmişse kişinin o uzmanlıkta
+//     olduğu doğrulanır).
+// Önceki personelin TicketLog kayıtları asla silinmez; bu uç yalnızca yeni
+// bir TicketTransfer + TicketLog satırı ekler ve Ticket.assignedToId'yi günceller.
 export const transferTicket = async (req, res) => {
   try {
     const ticketId = parseId(req.params.id);
@@ -28,14 +36,20 @@ export const transferTicket = async (req, res) => {
       return res.status(400).json({ message: "Geçersiz talep kimliği." });
     }
 
-    const { toSpecializationId, toUserId, reason, workDescription } = req.body;
-    const parsedSpecializationId = Number(toSpecializationId);
+    const { toSpecializationId, toUserId } = req.body;
+    const parsedSpecializationId =
+      toSpecializationId !== undefined && toSpecializationId !== null && toSpecializationId !== ""
+        ? Number(toSpecializationId)
+        : null;
     const parsedToUserId =
       toUserId !== undefined && toUserId !== null && toUserId !== ""
         ? Number(toUserId)
         : null;
 
-    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
 
     if (!ticket) {
       return res.status(404).json({ message: "Talep bulunamadı." });
@@ -47,24 +61,28 @@ export const transferTicket = async (req, res) => {
 
     if (!isAdmin && !isAssignedTechnician) {
       return res.status(403).json({
-        message: "Bu talep size atanmadığı için aktaramazsınız.",
+        message: "Bu talep size atanmadığı için devredemezsiniz.",
       });
     }
 
     if (CLOSED_STATUSES.includes(ticket.status)) {
       return res.status(400).json({
-        message: "Çözülmüş veya iptal edilmiş bir talep başka bir uzmanlığa aktarılamaz.",
+        message: "Çözülmüş veya iptal edilmiş bir talep devredilemez.",
       });
     }
 
-    const specialization = await prisma.specialization.findFirst({
-      where: { id: parsedSpecializationId, isActive: true },
-    });
+    let specialization = null;
 
-    if (!specialization) {
-      return res.status(404).json({
-        message: "Hedef uzmanlık alanı bulunamadı veya aktif değil.",
+    if (parsedSpecializationId) {
+      specialization = await prisma.specialization.findFirst({
+        where: { id: parsedSpecializationId, isActive: true },
       });
+
+      if (!specialization) {
+        return res.status(404).json({
+          message: "Hedef uzmanlık alanı bulunamadı veya aktif değil.",
+        });
+      }
     }
 
     let targetTechnicianId = null;
@@ -75,13 +93,17 @@ export const transferTicket = async (req, res) => {
           id: parsedToUserId,
           role: "TEKNIK_PERSONEL",
           isActive: true,
-          specializations: { some: { id: parsedSpecializationId } },
+          ...(parsedSpecializationId
+            ? { specializations: { some: { id: parsedSpecializationId } } }
+            : {}),
         },
       });
 
       if (!targetTechnician) {
         return res.status(400).json({
-          message: "Seçilen personel bu uzmanlık alanında aktif değil.",
+          message: parsedSpecializationId
+            ? "Seçilen personel bu uzmanlık alanında aktif değil."
+            : "Seçilen personel aktif değil.",
         });
       }
 
@@ -91,14 +113,20 @@ export const transferTicket = async (req, res) => {
 
       if (!targetTechnicianId) {
         return res.status(400).json({
-          message: "Bu uzmanlık alanında aktif teknik personel bulunamadı.",
+          message: parsedSpecializationId
+            ? "Bu uzmanlık alanında aktif teknik personel bulunamadı."
+            : "Sistemde aktif teknik personel bulunamadı.",
         });
       }
     }
 
-    const trimmedReason = reason.trim();
-    const trimmedWorkDescription = workDescription.trim();
+    const targetTechnician = await prisma.user.findUnique({
+      where: { id: targetTechnicianId },
+      select: { id: true, name: true },
+    });
+
     const device = await recordDevice(req);
+    const specializationLabel = specialization ? specialization.name : "Fark Etmez";
 
     // Sıralı, üst düzey sorgular (bkz. ticket.controller.js'teki
     // $transaction/nested-write kaçınma gerekçesi) — proje konvansiyonu.
@@ -108,8 +136,6 @@ export const transferTicket = async (req, res) => {
         fromUserId: req.user.id,
         toSpecializationId: parsedSpecializationId,
         toUserId: targetTechnicianId,
-        reason: trimmedReason,
-        workDescription: trimmedWorkDescription,
       },
     });
 
@@ -126,9 +152,10 @@ export const transferTicket = async (req, res) => {
         ticketId,
         type: "UZMANLIGA_AKTARILDI",
         description:
-          `İşlem: ${trimmedWorkDescription}\n` +
-          `Aktarma nedeni: ${trimmedReason}\n` +
-          `Hedef uzmanlık: ${specialization.name}`,
+          `Eski personel: ${ticket.assignedTo?.name || "Atanmamış"}\n` +
+          `Yeni personel: ${targetTechnician.name}\n` +
+          `Seçilen uzmanlık: ${specializationLabel}\n` +
+          `İşlemi yapan: ${req.user.name}`,
         previousValue: ticket.assignedToId ? String(ticket.assignedToId) : null,
         newValue: String(targetTechnicianId),
         userId: req.user.id,
@@ -145,11 +172,14 @@ export const transferTicket = async (req, res) => {
       await enqueueAssignmentEmail(updatedTicket.assignedTo, updatedTicket);
     }
 
+    // Yeni atanan personele: TALEP_ATANDI tipi masaüstü bildirimini de
+    // tetikler (bkz. NotificationContext.jsx) — yalnızca bu kişinin
+    // socket odasına (user:{id}) gönderilir, başka kimseye gitmez.
     await notifyUser({
       userId: targetTechnicianId,
       ticketId,
       title: "Yeni Talep Atandı",
-      message: `${updatedTicket.ticketNumber} numaralı talep ${specialization.name} uzmanlık alanına aktarıldı ve size atandı.`,
+      message: `${updatedTicket.ticketNumber} numaralı talep ${req.user.name} tarafından size devredildi.`,
       type: "TALEP_ATANDI",
     });
 
@@ -157,28 +187,28 @@ export const transferTicket = async (req, res) => {
       await notifyUser({
         userId: ticket.assignedToId,
         ticketId,
-        title: "Talep Aktarıldı",
-        message: `${updatedTicket.ticketNumber} numaralı talebi ${specialization.name} uzmanlık alanına devrettiniz.`,
+        title: "Talep Devredildi",
+        message: `${updatedTicket.ticketNumber} numaralı talep ${req.user.name} tarafından ${targetTechnician.name} kişisine devredildi.`,
         type: "TALEP_DEVREDILDI",
       });
     }
 
     await notifyRole("ADMIN", {
       ticketId,
-      title: "Talep Uzmanlığa Aktarıldı",
-      message: `${updatedTicket.ticketNumber} numaralı talep ${specialization.name} uzmanlık alanına aktarıldı.`,
+      title: "Talep Devredildi",
+      message: `${updatedTicket.ticketNumber} numaralı talep ${targetTechnician.name} kişisine devredildi.`,
       type: "TALEP_DEVREDILDI",
     });
 
     return res.status(200).json({
-      message: "Talep başarıyla aktarıldı.",
+      message: "Talep başarıyla devredildi.",
       ticket: stripDeviceInfoForPersonel(updatedTicket, req.user),
     });
   } catch (error) {
     console.error("transferTicket error:", error);
 
     return res.status(500).json({
-      message: "Talep aktarılırken bir hata oluştu.",
+      message: "Talep devredilirken bir hata oluştu.",
     });
   }
 };

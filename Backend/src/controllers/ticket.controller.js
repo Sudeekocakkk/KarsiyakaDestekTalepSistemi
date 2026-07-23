@@ -910,7 +910,7 @@ export const updateTicket = async (req, res) => {
         userId: technicianToNotify.id,
         ticketId: updatedTicket.id,
         title: "Yeni Talep Atandı",
-        message: `${updatedTicket.ticketNumber} numaralı talep size atandı.`,
+        message: `${updatedTicket.ticketNumber} numaralı talep ${req.user.name} tarafından size atandı.`,
         type: "TALEP_ATANDI",
       });
     }

@@ -3,20 +3,26 @@ import prisma from "../config/prisma.js";
 // Bir uzmanlık alanındaki aktif teknik personeller arasından açık iş
 // sayısı en az olanı seçer. İş yoğunluğu hesaplanırken yalnızca henüz
 // sonuçlanmamış talepler (YENI/ATANDI/ISLEMDE/BEKLEMEDE) sayılır.
-// Hem otomatik talep ataması (ticket.controller.js) hem de uzmanlığa
-// aktarım (ticketTransfer.controller.js) tarafından paylaşılan ortak
-// servistir.
+// specializationId null/undefined verilirse uzmanlık şartı aranmaz —
+// sistemdeki TÜM aktif teknik personeller arasından en az yüklü olan
+// seçilir ("Fark Etmez" otomatik atama). Hem otomatik talep ataması
+// (ticket.controller.js) hem de işi devretme (ticketTransfer.controller.js)
+// tarafından paylaşılan ortak servistir.
 export const findTechnicianWithLeastLoad = async (specializationId) => {
   const technicians = await prisma.user.findMany({
     where: {
       role: "TEKNIK_PERSONEL",
       isActive: true,
-      specializations: {
-        some: {
-          id: specializationId,
-          isActive: true,
-        },
-      },
+      ...(specializationId
+        ? {
+            specializations: {
+              some: {
+                id: specializationId,
+                isActive: true,
+              },
+            },
+          }
+        : {}),
     },
     select: {
       id: true,

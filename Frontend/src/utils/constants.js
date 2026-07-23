@@ -86,7 +86,7 @@ export const TICKET_LOG_TYPE_LABELS = {
   COZUM_EKLENDI: "Çözüm eklendi",
   TALEP_KAPATILDI: "Talep kapatıldı",
   TALEP_YENIDEN_ACILDI: "Talep yeniden açıldı",
-  UZMANLIGA_AKTARILDI: "Uzmanlığa aktarıldı",
+  UZMANLIGA_AKTARILDI: "İşi devredildi",
   DEVIR_ISTENDI: "Devir istendi",
   DEVIR_KABUL_EDILDI: "Devir kabul edildi",
   DEVIR_REDDEDILDI: "Devir reddedildi",

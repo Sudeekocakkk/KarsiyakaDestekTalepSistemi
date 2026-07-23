@@ -310,13 +310,14 @@ model TicketTransfer {
   fromUserId Int?
   fromUser   User? @relation("TicketTransferFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
 
-  toSpecializationId Int
-  toSpecialization   Specialization @relation(fields: [toSpecializationId], references: [id])
+  // Null ise "Fark Etmez" (uzmanlık şartı aranmadan devir) seçildiği anlamına gelir.
+  toSpecializationId Int?
+  toSpecialization   Specialization? @relation(fields: [toSpecializationId], references: [id], onDelete: SetNull)
 
   toUserId Int?
   toUser   User? @relation("TicketTransferTo", fields: [toUserId], references: [id], onDelete: SetNull)
 
-  reason          String
+  reason          String?
   workDescription String?
 
   createdAt DateTime @default(now())

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, UserRoundPlus } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft } from "lucide-react";
 import { getTicketById, updateTicket } from "../../api/ticket.api";
 import { getUsers } from "../../api/user.api";
 import Loader from "../../components/common/Loader";
@@ -12,8 +12,6 @@ import Button from "../../components/common/Button";
 import { inputClass } from "../../components/common/FormField";
 import PhotoThumbnailGallery from "../../components/common/PhotoThumbnailGallery";
 import TransferTicketModal from "../../components/tickets/TransferTicketModal";
-import HandoverRequestModal from "../../components/tickets/HandoverRequestModal";
-import HandoverResponsePanel from "../../components/tickets/HandoverResponsePanel";
 import { useAuth } from "../../context/useAuth";
 import { formatDateTime } from "../../utils/formatters";
 import {
@@ -48,7 +46,6 @@ const TicketDetailPage = () => {
   const [initialForm, setInitialForm] = useState(emptyForm);
 
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
 
   const isAdmin = user?.role === ROLES.ADMIN;
   const isAssignedTechnician =
@@ -59,10 +56,7 @@ const TicketDetailPage = () => {
   const canEditSolution = isAdmin || isAssignedTechnician;
 
   const isClosed = ticket ? CLOSED_STATUSES.includes(ticket.status) : false;
-  const pendingHandoverRequest = ticket?.handoverRequests?.find(
-    (request) => request.status === "PENDING"
-  );
-  const canTransferOrHandover = isAssignedTechnician && !isClosed && !pendingHandoverRequest;
+  const canTransfer = isAssignedTechnician && !isClosed;
 
   const loadTicket = useCallback(async () => {
     setIsLoading(true);
@@ -192,13 +186,10 @@ const TicketDetailPage = () => {
           </div>
         </div>
 
-        {canTransferOrHandover && (
+        {canTransfer && (
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setIsTransferModalOpen(true)}>
-              <ArrowRightLeft className="h-4 w-4" /> Uzmanlığa Aktar
-            </Button>
-            <Button variant="outline" onClick={() => setIsHandoverModalOpen(true)}>
-              <UserRoundPlus className="h-4 w-4" /> İşi Devret
+              <ArrowRightLeft className="h-4 w-4" /> İşi Devret
             </Button>
           </div>
         )}
@@ -241,14 +232,6 @@ const TicketDetailPage = () => {
           </div>
         )}
       </div>
-
-      {pendingHandoverRequest && (
-        <HandoverResponsePanel
-          handoverRequest={pendingHandoverRequest}
-          currentUserId={user?.id}
-          onSuccess={loadTicket}
-        />
-      )}
 
       <div className="rounded-xl2 bg-white p-5 shadow-card">
         <p className="mb-4 text-sm font-semibold text-slate-700">Talebi Güncelle</p>
@@ -367,12 +350,6 @@ const TicketDetailPage = () => {
       <TransferTicketModal
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
-        ticket={ticket}
-        onSuccess={loadTicket}
-      />
-      <HandoverRequestModal
-        isOpen={isHandoverModalOpen}
-        onClose={() => setIsHandoverModalOpen(false)}
         ticket={ticket}
         onSuccess={loadTicket}
       />

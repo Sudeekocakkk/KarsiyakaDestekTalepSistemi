@@ -2,22 +2,21 @@ import { useEffect, useState } from "react";
 import Modal from "../common/Modal";
 import Button from "../common/Button";
 import ErrorAlert from "../common/ErrorAlert";
-import FormField, { inputClass } from "../common/FormField";
+import FormField from "../common/FormField";
+import SearchableSelect from "../common/SearchableSelect";
 import { getSpecializations, getSpecializationById } from "../../api/specialization.api";
+import { getTechnicians } from "../../api/user.api";
 import { transferTicket } from "../../api/ticket.api";
 
-const emptyForm = {
-  specializationId: "",
-  assignMode: "auto",
-  technicianId: "",
-  reason: "",
-  workDescription: "",
-};
+const ANY_VALUE = "";
+const AUTO_ASSIGN_LABEL = "Fark Etmez - Otomatik Atama";
 
-// Atanmış teknik personelin (veya ADMIN'in), bir talebi başka bir uzmanlık
-// alanına — isteğe bağlı olarak belirli bir kişiye — aktarmasını sağlar.
-// "Fark etmez, otomatik ata" seçilirse backend en az yüklü aktif teknik
-// personeli seçer (bkz. ticketAssignment.service.js).
+const emptyForm = { specializationId: ANY_VALUE, technicianId: ANY_VALUE };
+
+// Atanmış teknik personelin (veya ADMIN'in) bir talebi doğrudan başka bir
+// teknik personele devretmesini sağlar. Hem hedef uzmanlık hem hedef
+// personel "Fark Etmez" olabilir; backend (transferTicket) bu kombinasyona
+// göre otomatik atama yapar (bkz. ticketAssignment.service.js).
 const TransferTicketModal = ({ isOpen, onClose, ticket, onSuccess }) => {
   const [specializations, setSpecializations] = useState([]);
   const [technicians, setTechnicians] = useState([]);
@@ -31,61 +30,77 @@ const TransferTicketModal = ({ isOpen, onClose, ticket, onSuccess }) => {
 
     setForm(emptyForm);
     setError("");
-    setTechnicians([]);
 
     getSpecializations()
       .then((data) => setSpecializations(data.specializations.filter((s) => s.isActive)))
       .catch(() => setSpecializations([]));
   }, [isOpen]);
 
+  // Hedef uzmanlık değiştikçe teknik personel listesi anlık güncellenir:
+  // belirli bir uzmanlık seçiliyse yalnızca o uzmanlıktaki aktif personel,
+  // "Fark Etmez" seçiliyse tüm aktif teknik personeller listelenir.
+  // `cancelled` bayrağı, kullanıcı hızlıca uzmanlık değiştirdiğinde eski bir
+  // isteğin sonucunun yeni seçimin üzerine yazmasını engeller.
   useEffect(() => {
-    if (!form.specializationId) {
-      setTechnicians([]);
-      return;
-    }
+    if (!isOpen) return undefined;
 
+    let cancelled = false;
     setIsLoadingTechnicians(true);
-    getSpecializationById(form.specializationId)
-      .then((data) => {
-        const activeTechnicians = (data.specialization.users || []).filter(
-          (user) => user.role === "TEKNIK_PERSONEL" && user.isActive
-        );
-        setTechnicians(activeTechnicians);
-      })
-      .catch(() => setTechnicians([]))
-      .finally(() => setIsLoadingTechnicians(false));
-  }, [form.specializationId]);
 
-  const handleChange = (field) => (event) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
-  };
+    const request = form.specializationId
+      ? getSpecializationById(form.specializationId).then((data) =>
+          (data.specialization.users || []).filter(
+            (user) => user.role === "TEKNIK_PERSONEL" && user.isActive
+          )
+        )
+      : getTechnicians().then((data) => data.technicians);
+
+    request
+      .then((list) => {
+        if (cancelled) return;
+        setTechnicians(list);
+        // Önceden seçilmiş belirli bir teknik personel yeni uzmanlıkla
+        // eşleşmiyorsa seçim otomatik temizlenir ("Fark Etmez" her zaman geçerlidir).
+        setForm((prev) => {
+          if (!prev.technicianId) return prev;
+          const stillValid = list.some((tech) => String(tech.id) === String(prev.technicianId));
+          return stillValid ? prev : { ...prev, technicianId: ANY_VALUE };
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setTechnicians([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTechnicians(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, form.specializationId]);
+
+  const specializationOptions = [
+    { value: ANY_VALUE, label: "Fark Etmez" },
+    ...specializations.map((specialization) => ({
+      value: String(specialization.id),
+      label: specialization.name,
+    })),
+  ];
+
+  const technicianOptions = [
+    { value: ANY_VALUE, label: AUTO_ASSIGN_LABEL },
+    ...technicians.map((technician) => ({ value: String(technician.id), label: technician.name })),
+  ];
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
-
-    if (!form.specializationId) {
-      setError("Hedef uzmanlık alanı seçmelisiniz.");
-      return;
-    }
-
-    if (form.assignMode === "specific" && !form.technicianId) {
-      setError("Belirli personel seçeneği için bir teknik personel seçmelisiniz.");
-      return;
-    }
-
-    if (!form.reason.trim() || !form.workDescription.trim()) {
-      setError("Aktarma nedeni ve yapılan işlemin açıklaması zorunludur.");
-      return;
-    }
 
     setIsSubmitting(true);
     setError("");
     try {
       await transferTicket(ticket.id, {
-        toSpecializationId: Number(form.specializationId),
-        toUserId: form.assignMode === "specific" ? Number(form.technicianId) : undefined,
-        reason: form.reason.trim(),
-        workDescription: form.workDescription.trim(),
+        toSpecializationId: form.specializationId || undefined,
+        toUserId: form.technicianId || undefined,
       });
       onSuccess?.();
       onClose();
@@ -98,7 +113,7 @@ const TransferTicketModal = ({ isOpen, onClose, ticket, onSuccess }) => {
 
   return (
     <Modal
-      title="Uzmanlığa Aktar"
+      title="İşi Devret"
       isOpen={isOpen}
       onClose={onClose}
       size="lg"
@@ -108,7 +123,7 @@ const TransferTicketModal = ({ isOpen, onClose, ticket, onSuccess }) => {
             Vazgeç
           </Button>
           <Button onClick={handleSubmit} isLoading={isSubmitting}>
-            Aktar
+            Devret
           </Button>
         </>
       }
@@ -116,93 +131,27 @@ const TransferTicketModal = ({ isOpen, onClose, ticket, onSuccess }) => {
       <div className="space-y-4">
         <ErrorAlert message={error} />
 
-        <FormField label="Hedef Uzmanlık Alanı" required>
-          <select
-            className={inputClass}
+        <FormField label="Hedef Uzmanlık Alanı">
+          <SearchableSelect
             value={form.specializationId}
-            onChange={handleChange("specializationId")}
-            disabled={isSubmitting}
-          >
-            <option value="">Uzmanlık alanı seçin</option>
-            {specializations.map((specialization) => (
-              <option key={specialization.id} value={specialization.id}>
-                {specialization.name}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        {form.specializationId && (
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="assignMode"
-                value="auto"
-                checked={form.assignMode === "auto"}
-                onChange={handleChange("assignMode")}
-                disabled={isSubmitting}
-              />
-              Fark etmez, otomatik ata
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="assignMode"
-                value="specific"
-                checked={form.assignMode === "specific"}
-                onChange={handleChange("assignMode")}
-                disabled={isSubmitting}
-              />
-              Belirli personel seç
-            </label>
-
-            {form.assignMode === "specific" && (
-              <select
-                className={inputClass}
-                value={form.technicianId}
-                onChange={handleChange("technicianId")}
-                disabled={isSubmitting || isLoadingTechnicians}
-              >
-                <option value="">
-                  {isLoadingTechnicians ? "Yükleniyor..." : "Teknik personel seçin"}
-                </option>
-                {technicians.map((technician) => (
-                  <option key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            {form.assignMode === "specific" &&
-              !isLoadingTechnicians &&
-              technicians.length === 0 && (
-                <p className="text-xs text-amber-600">
-                  Bu uzmanlık alanında aktif teknik personel bulunamadı.
-                </p>
-              )}
-          </div>
-        )}
-
-        <FormField label="Aktarma Nedeni" required>
-          <textarea
-            rows={2}
-            className={inputClass}
-            value={form.reason}
-            onChange={handleChange("reason")}
-            placeholder="Bu talebi neden aktarıyorsunuz?"
+            onChange={(value) => setForm((prev) => ({ ...prev, specializationId: value }))}
+            options={specializationOptions}
+            placeholder="Uzmanlık adı yazın veya listeden seçin..."
             disabled={isSubmitting}
           />
         </FormField>
 
-        <FormField label="Yaptığınız İşlemin Açıklaması" required>
-          <textarea
-            rows={3}
-            className={inputClass}
-            value={form.workDescription}
-            onChange={handleChange("workDescription")}
-            placeholder="Kendi uzmanlık alanınızda yaptığınız işlemi açıklayın..."
-            disabled={isSubmitting}
+        <FormField
+          label="Teknik Personel Seçin"
+          hint={isLoadingTechnicians ? "Personel listesi yükleniyor..." : undefined}
+        >
+          <SearchableSelect
+            value={form.technicianId}
+            onChange={(value) => setForm((prev) => ({ ...prev, technicianId: value }))}
+            options={technicianOptions}
+            placeholder="Personel adı yazın veya listeden seçin..."
+            disabled={isSubmitting || isLoadingTechnicians}
+            emptyMessage="Aktif teknik personel bulunamadı"
           />
         </FormField>
       </div>
