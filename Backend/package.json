@@ -29,7 +29,8 @@
     "dev": "nodemon server.js",
     "worker:mail": "node src/workers/mail.worker.js",
     "worker:mail:dev": "nodemon src/workers/mail.worker.js",
-    "reset-database": "node scripts/resetDatabase.js"
+    "reset-database": "node scripts/resetDatabase.js",
+    "test:smtp": "node scripts/testSmtp.js"
   },
   "keywords": [],
   "author": "",

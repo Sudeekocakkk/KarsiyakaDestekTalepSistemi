@@ -6,6 +6,12 @@ export { MAIL_QUEUE_NAME };
 
 const ADD_JOB_TIMEOUT_MS = 3000;
 
+// EMAIL_NOTIFICATIONS_ENABLED=false ise mail kuyruğuna yeni iş eklenmez.
+// Değişken tanımsızsa (veya "false" dışında bir değerse) mevcut/eski
+// davranış (bildirimler açık) korunur — bu yüzden yalnızca tam olarak
+// "false" string'i devre dışı bırakır, güvenli varsayılan her zaman "açık".
+const isEmailNotificationsEnabled = () => process.env.EMAIL_NOTIFICATIONS_ENABLED !== "false";
+
 const connection = createRedisConnection("mail-queue");
 
 export const mailQueue = new Queue(MAIL_QUEUE_NAME, {
@@ -65,6 +71,13 @@ export const addTicketAssignedEmailJob = async ({
   categoryName,
   ticketUrl,
 }) => {
+  if (!isEmailNotificationsEnabled()) {
+    console.log(
+      `[mail-queue] EMAIL_NOTIFICATIONS_ENABLED=false, iş kuyruğa eklenmedi. talep no: ${ticketNumber}`
+    );
+    return;
+  }
+
   const jobId = `ticket-assigned-${ticketId}-${assignedToId}`;
 
   try {
